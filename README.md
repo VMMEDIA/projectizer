@@ -57,7 +57,7 @@ Projectizer takes a different approach:
 ## Quick Start
 
 ```bash
-git clone https://github.com/monkyver/projectizer.git
+git clone https://github.com/VMMEDIA/projectizer.git
 cd projectizer
 bash run.sh
 ```
