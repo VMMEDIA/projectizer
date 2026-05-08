@@ -15,7 +15,47 @@ set -e
 
 cd "$(dirname "$0")"
 PROJECT_ROOT="$(pwd)"
-APP_RES="$PROJECT_ROOT/Projectizer.app/Contents/Resources"
+
+# Find Projectizer.app in the standard locations. Priority:
+#   1. Project root (default) — the source bundle, recommended for dev
+#   2. /Applications/Projectizer.app — for users who moved the .app there
+#   3. ~/Applications/Projectizer.app
+#   4. PROJECTIZER_APP env var override
+#
+# This way `bash run.sh` keeps working even if you moved the bundle to
+# /Applications. The .app at the resolved location becomes the build target.
+find_app() {
+    if [ -n "$PROJECTIZER_APP" ] && [ -d "$PROJECTIZER_APP/Contents/Resources" ]; then
+        echo "$PROJECTIZER_APP"; return 0
+    fi
+    for candidate in \
+        "$PROJECT_ROOT/Projectizer.app" \
+        "/Applications/Projectizer.app" \
+        "$HOME/Applications/Projectizer.app"; do
+        if [ -d "$candidate/Contents/Resources" ]; then
+            echo "$candidate"; return 0
+        fi
+    done
+    return 1
+}
+
+if ! APP_PATH=$(find_app); then
+    cat <<'EOF' >&2
+ERROR: Projectizer.app bundle not found.
+
+Looked in:
+  ./Projectizer.app
+  /Applications/Projectizer.app
+  ~/Applications/Projectizer.app
+
+Either re-clone the repo (which ships with the bundle skeleton) or set
+PROJECTIZER_APP=/path/to/Projectizer.app to point to a custom location.
+EOF
+    exit 1
+fi
+
+APP_RES="$APP_PATH/Contents/Resources"
+echo "Using bundle: $APP_PATH"
 
 # --- 1. Python 3.10+ -----------------------------------------------------
 
@@ -61,16 +101,6 @@ fi
 
 # --- 3. Sync source files into the .app bundle ---------------------------
 
-if [ ! -d "$APP_RES" ]; then
-    cat <<EOF >&2
-ERROR: Projectizer.app/Contents/Resources/ not found.
-Expected at: $APP_RES
-
-The .app bundle structure must exist. Re-clone the repo or restore the bundle.
-EOF
-    exit 1
-fi
-
 echo "Syncing source files into the .app bundle..."
 cp app.py launcher.py requirements.txt config.example.json "$APP_RES/"
 # Mirror the static dir (rsync-like behavior with cp -R after delete)
@@ -101,7 +131,7 @@ if [ ! -d "$VENV" ] || [ "$(cat "$MARKER" 2>/dev/null)" != "$REQS_HASH" ]; then
     echo "Upgrading pip..."
     "$VENV/bin/python" -m pip install --upgrade pip
 
-    echo "Installing dependencies (3-5 min on first run, ~1 GB on disk)..."
+    echo "Installing dependencies (~30s on first run, ~75 MB on disk)..."
     "$VENV/bin/python" -m pip install -r "$APP_RES/requirements.txt"
 
     echo "$REQS_HASH" > "$MARKER"
