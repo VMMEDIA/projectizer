@@ -1,0 +1,79 @@
+#!/bin/bash
+# Projectizer.app launcher (self-contained mode).
+#
+# All runtime files live inside the .app bundle at Contents/Resources/:
+# app.py, launcher.py, static/, requirements.txt, .venv, config.json.
+# This makes the .app movable — drop it in /Applications, ~/Desktop,
+# anywhere — and double-click works.
+
+# Resolve absolute path to Resources/ inside this bundle.
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../Resources" && pwd)"
+
+# Don't cd into PROJECT_DIR yet. macOS TCC may sandbox files outside the
+# .app bundle even if we don't read them, but reading inside our own bundle
+# is allowed. Python startup needs a non-TCC cwd, so we run from /tmp.
+
+LOG_FILE="/tmp/projectizer-launcher.log"
+{
+    echo "=== $(date '+%F %T') launch ==="
+    echo "PROJECT_DIR=$PROJECT_DIR"
+    echo "PWD=$(pwd)"
+    echo "venv exists: $([ -d "$PROJECT_DIR/.venv" ] && echo yes || echo no)"
+    echo "app.py exists: $([ -f "$PROJECT_DIR/app.py" ] && echo yes || echo no)"
+} >> "$LOG_FILE" 2>&1
+
+needs_install() {
+    if [ ! -d "$PROJECT_DIR/.venv" ]; then
+        echo "needs_install: no .venv" >> "$LOG_FILE"
+        return 0
+    fi
+    IMPORT_OUT=$( cd /tmp && "$PROJECT_DIR/.venv/bin/python" -c "import webview, fastapi, openai, pyannote.audio" 2>&1 )
+    IMPORT_RC=$?
+    if [ $IMPORT_RC -ne 0 ]; then
+        echo "needs_install: import failed (rc=$IMPORT_RC):" >> "$LOG_FILE"
+        echo "$IMPORT_OUT" >> "$LOG_FILE"
+        return 0
+    fi
+    echo "needs_install: imports OK" >> "$LOG_FILE"
+    return 1
+}
+
+if needs_install; then
+    # Detect macOS TCC sandbox blocking access to our own bundle. If the .app
+    # is in ~/Documents (or similar protected folder) AND not properly signed,
+    # macOS may deny access to files inside the bundle. The fix is to move
+    # the .app outside protected folders.
+    if grep -q "Operation not permitted" "$LOG_FILE" 2>/dev/null; then
+        TCC_MSG="Projectizer.app non riesce a leggere il proprio bundle perche si trova in una cartella protetta da macOS (Documents, Desktop, Downloads o iCloud Drive).\n\nSposta Projectizer.app in una posizione non protetta:\n   /Applications/Projectizer.app  (consigliato)\n   ~/Applications/Projectizer.app\n   ~/Projectizer.app\n\nIn Terminale:\n   mv '$PROJECT_DIR/../../..' /Applications/Projectizer.app\n\nIn alternativa, lancia da Terminale:\n   bash '$PROJECT_DIR/../../../run.sh'  (se il repo e ancora fuori dalla cartella protetta)"
+        /usr/bin/osascript -e "display dialog \"$TCC_MSG\" with title \"Projectizer - sandbox macOS\" buttons {\"OK\"} default button \"OK\"" >/dev/null 2>&1
+        exit 1
+    fi
+
+    # First-run install: dependencies need to be installed inside Resources/.venv.
+    # Show progress in Terminal so the user sees what's happening.
+    SETUP="cd '$PROJECT_DIR' && \
+echo 'Setting up Projectizer (3-5 min on first install, ~1 GB)...' && \
+{ [ -d .venv ] || python3 -m venv .venv; } && \
+.venv/bin/python -m pip install -q --upgrade pip && \
+.venv/bin/python -m pip install -r requirements.txt && \
+echo && echo 'Setup complete. Close this Terminal and double-click Projectizer.app again.'"
+    /usr/bin/osascript \
+        -e 'tell application "Terminal" to activate' \
+        -e "tell application \"Terminal\" to do script \"$SETUP\""
+    exit 0
+fi
+
+# Run launcher.py from /tmp so Python's startup doesn't trip on a TCC-protected
+# cwd. launcher.py chdirs to PROJECT_DIR (Resources/) itself once Python is up.
+LOG="$(mktemp -t projectizer-launcher.XXXXXX)"
+( cd /tmp && "$PROJECT_DIR/.venv/bin/python" "$PROJECT_DIR/launcher.py" ) >"$LOG" 2>&1
+RC=$?
+{ echo "launcher exit rc=$RC"; tail -c 600 "$LOG"; } >> "$LOG_FILE"
+
+if [ $RC -ne 0 ]; then
+    ERR="$(tail -c 1200 "$LOG" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    /usr/bin/osascript -e "display dialog \"Projectizer exited with error code $RC.\n\n$ERR\n\nLog: $LOG\" with title \"Projectizer\" buttons {\"OK\"} default button \"OK\""
+fi
+
+rm -f "$LOG"
+exit $RC
