@@ -7,352 +7,994 @@
     <title>Projectizer</title>
     <style>
         :root {
-            --bg: #1a1a1a;
-            --surface: #242424;
-            --surface2: #2e2e2e;
-            --border: #3a3a3a;
-            --text: #e8e8e8;
-            --text2: #999;
+            color-scheme: light dark;
+
+            /* Light theme (macOS-style) */
+            --bg: #f4f4f6;
+            --sidebar-bg: rgba(246, 246, 248, 0.72);
+            --main-bg: #ffffff;
+            --surface: rgba(0, 0, 0, 0.035);
+            --surface-hover: rgba(0, 0, 0, 0.055);
+            --surface-active: rgba(0, 0, 0, 0.08);
+            --border: rgba(0, 0, 0, 0.08);
+            --border-strong: rgba(0, 0, 0, 0.14);
+            --text: #1d1d1f;
+            --text2: #6e6e73;
+            --text3: #a1a1a6;
             --accent: #6c5ce7;
-            --accent2: #a29bfe;
-            --success: #00b894;
-            --error: #e17055;
-            --radius: 12px;
+            --accent-hover: #5b4cdb;
+            --accent-soft: rgba(108, 92, 231, 0.10);
+            --accent-text: #ffffff;
+            --success: #28b760;
+            --error: #ff3b30;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.18);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1c1c1e;
+                --sidebar-bg: rgba(36, 36, 38, 0.72);
+                --main-bg: #232326;
+                --surface: rgba(255, 255, 255, 0.045);
+                --surface-hover: rgba(255, 255, 255, 0.075);
+                --surface-active: rgba(255, 255, 255, 0.10);
+                --border: rgba(255, 255, 255, 0.08);
+                --border-strong: rgba(255, 255, 255, 0.14);
+                --text: #f5f5f7;
+                --text2: #a1a1a6;
+                --text3: #6e6e73;
+                --accent: #8a7af0;
+                --accent-hover: #a29bfe;
+                --accent-soft: rgba(138, 122, 240, 0.16);
+                --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+                --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+                --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.5);
+            }
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            -webkit-font-smoothing: antialiased;
+        html, body {
+            height: 100vh;
+            overflow: hidden;
         }
 
-        .container { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
-        header { text-align: center; margin-bottom: 40px; }
-        header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
-        header p { color: var(--text2); margin-top: 6px; font-size: 14px; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+            background: var(--bg);
+            color: var(--text);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
 
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 24px;
+        button, input, select, textarea {
+            font-family: inherit;
+            font-size: inherit;
+            color: inherit;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* ─── Layout: two-pane grid ─────────────────────────────────────── */
+
+        .app {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            height: 100vh;
+        }
+
+        .sidebar {
+            background: var(--sidebar-bg);
+            -webkit-backdrop-filter: blur(28px) saturate(180%);
+            backdrop-filter: blur(28px) saturate(180%);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 16px 18px 12px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .sidebar-title {
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+            color: var(--text);
+        }
+
+        .sidebar-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 14px 4px;
+        }
+
+        .sidebar-footer {
+            padding: 12px 14px 14px;
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .main {
+            display: grid;
+            grid-template-rows: 44px 1fr;
+            background: var(--main-bg);
+            overflow: hidden;
+        }
+
+        /* ─── Sidebar sections ──────────────────────────────────────────── */
+
+        .section {
             margin-bottom: 16px;
         }
 
-        .card h2 {
-            font-size: 14px; font-weight: 600; text-transform: uppercase;
-            letter-spacing: 0.5px; color: var(--text2); margin-bottom: 16px;
+        .section-label {
+            font-size: 10.5px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text3);
+            padding: 0 4px 6px;
         }
 
-        .settings-bar { display: flex; justify-content: flex-end; margin-bottom: 16px; }
-        .settings-btn {
-            background: none; border: 1px solid var(--border); color: var(--text2);
-            padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; transition: all 0.2s;
-        }
-        .settings-btn:hover { border-color: var(--accent); color: var(--accent2); }
-        .settings-panel { display: none; margin-bottom: 16px; }
-        .settings-panel.open { display: block; }
-        .input-group { display: flex; gap: 8px; }
-
-        input[type="password"], input[type="text"], select {
-            flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
-            padding: 10px 14px; border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s;
-        }
-        input:focus, select:focus { border-color: var(--accent); }
-
-        .btn {
-            background: var(--accent); color: white; border: none; padding: 10px 20px;
-            border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500;
-            transition: all 0.2s; white-space: nowrap;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-sm { padding: 6px 14px; font-size: 13px; }
-        .btn-outline { background: none; border: 1px solid var(--border); color: var(--text); }
-        .btn-outline:hover { border-color: var(--accent); }
-
+        /* Dropzone */
         .dropzone {
-            border: 2px dashed var(--border); border-radius: var(--radius);
-            padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.2s;
+            border: 1.5px dashed var(--border-strong);
+            border-radius: 10px;
+            padding: 22px 14px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            background: var(--surface);
         }
         .dropzone:hover, .dropzone.dragover {
-            border-color: var(--accent); background: rgba(108, 92, 231, 0.05);
+            border-color: var(--accent);
+            background: var(--accent-soft);
         }
-        .dropzone-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.6; }
-        .dropzone-text { color: var(--text2); font-size: 14px; }
-        .dropzone-text strong { color: var(--text); }
+        .dropzone-icon {
+            font-size: 22px;
+            margin-bottom: 6px;
+            opacity: 0.85;
+        }
+        .dropzone-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+        }
+        .dropzone-hint {
+            font-size: 11px;
+            color: var(--text2);
+            margin-top: 3px;
+        }
 
         /* File list */
-        .file-list { margin-top: 12px; }
+        .file-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 8px;
+            border-radius: 7px;
+            font-size: 12px;
+            transition: background 0.1s;
+        }
+        .file-row:hover {
+            background: var(--surface-hover);
+        }
+        .file-order-pill {
+            background: var(--accent);
+            color: var(--accent-text);
+            width: 18px;
+            height: 18px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .file-name {
+            flex: 1;
+            font-weight: 500;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+        }
+        .file-meta {
+            color: var(--text2);
+            font-size: 11px;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .file-remove {
+            background: none;
+            border: none;
+            color: var(--text3);
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 4px;
+            border-radius: 4px;
+            line-height: 1;
+            opacity: 0;
+            transition: all 0.15s;
+        }
+        .file-row:hover .file-remove { opacity: 1; }
+        .file-remove:hover { color: var(--error); background: var(--surface-hover); }
 
-        .file-item {
-            display: flex; align-items: center; gap: 10px;
-            padding: 10px 14px; background: var(--surface2); border-radius: 8px;
-            margin-bottom: 6px; font-size: 13px;
-        }
-        .file-item .file-order {
-            background: var(--accent); color: white; width: 22px; height: 22px;
-            border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            font-size: 11px; font-weight: 600; flex-shrink: 0;
-        }
-        .file-item .file-name { flex: 1; font-weight: 500; font-size: 14px; }
-        .file-item .file-meta { color: var(--text2); font-size: 12px; }
-        .file-item .file-remove {
-            background: none; border: none; color: var(--text2); cursor: pointer;
-            font-size: 16px; padding: 0 4px;
-        }
-        .file-item .file-remove:hover { color: var(--error); }
-
-        .file-list-header {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 8px;
-        }
-        .file-list-header span { font-size: 13px; color: var(--text2); }
-        .sort-badge {
-            font-size: 11px; padding: 2px 8px; border-radius: 4px;
-            background: rgba(108, 92, 231, 0.15); color: var(--accent2);
-        }
-
-        .estimate-box {
-            display: none; margin-top: 12px; padding: 12px 16px;
-            background: rgba(108, 92, 231, 0.08); border: 1px solid rgba(108, 92, 231, 0.2);
-            border-radius: 8px; font-size: 13px;
-        }
-        .estimate-box.visible { display: block; }
-        .estimate-details { display: none; gap: 16px; flex-wrap: wrap; }
-        .estimate-details.ready { display: flex; }
-        .estimate-loading { color: var(--text2); }
-        .estimate-breakdown { color: var(--text2); font-size: 12px; }
-
-        .options { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
-        .option-item { display: flex; align-items: center; gap: 8px; }
-        .option-item label { font-size: 14px; color: var(--text2); cursor: pointer; }
-        input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
-
-        .progress-section { display: none; }
-        .progress-section.visible { display: block; }
-        .progress-bar-container {
-            background: var(--bg); border-radius: 6px; overflow: hidden; height: 6px; margin-bottom: 12px;
-        }
-        .progress-bar {
-            height: 100%; background: var(--accent); border-radius: 6px;
-            width: 0%; transition: width 0.3s ease;
-        }
-        .progress-status { font-size: 13px; color: var(--text2); }
-
-        .results-section { display: none; }
-        .results-section.visible { display: block; }
-        .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-        .stat { background: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 13px; }
-        .stat-value { font-weight: 600; color: var(--accent2); }
-
-        .transcript-box {
-            background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-            padding: 16px; max-height: 400px; overflow-y: auto; font-size: 14px;
-            line-height: 1.7; white-space: pre-wrap; margin-bottom: 12px;
-        }
-        .copy-bar { display: flex; justify-content: flex-end; gap: 8px; }
-        .summary-section { margin-top: 16px; }
-        .summary-box {
-            background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-            padding: 16px; max-height: 400px; overflow-y: auto; font-size: 14px; line-height: 1.7;
-        }
-        .summary-box h1, .summary-box h2, .summary-box h3 { margin: 12px 0 6px; font-size: 15px; }
-        .summary-box ul, .summary-box ol { padding-left: 20px; margin: 6px 0; }
-        .summary-box strong { color: var(--accent2); }
-
-        .error-msg {
-            display: none; background: rgba(225, 112, 85, 0.1); border: 1px solid var(--error);
-            border-radius: 8px; padding: 12px 16px; color: var(--error); font-size: 14px; margin-top: 12px;
-        }
-        .error-msg.visible { display: block; }
-
-        .api-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-        .api-status.connected { background: var(--success); }
-        .api-status.disconnected { background: var(--error); }
-
-        .settings-section { margin-bottom: 16px; }
-        .settings-section:last-child { margin-bottom: 0; }
-        .settings-section .hint {
-            color: var(--text2); font-size: 11px; margin-top: 6px; line-height: 1.5;
-        }
-        .settings-section .hint a { color: var(--accent2); text-decoration: none; }
-        .settings-section .hint a:hover { text-decoration: underline; }
-
-        .num-speakers {
-            width: 48px !important; text-align: center; padding: 6px 8px !important;
-            font-size: 13px !important; flex: 0 0 auto !important;
-        }
-
-        /* Speaker-labelled transcript */
-        .speaker-block { margin-bottom: 14px; }
-        .speaker-block:last-child { margin-bottom: 0; }
-        .speaker-badge {
-            display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
-            padding: 3px 10px; border-radius: 999px; color: white; text-transform: uppercase;
+        .files-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 4px;
+            font-size: 11px;
+            color: var(--text2);
             margin-bottom: 6px;
         }
-        .speaker-text { color: var(--text); font-size: 14px; line-height: 1.7; }
-
-        @media (max-width: 600px) {
-            .container { padding: 20px 12px; }
-            .stats { flex-direction: column; }
-            .options { flex-direction: column; }
+        .sort-tag {
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 500;
         }
+
+        /* Options */
+        .option-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 4px;
+            font-size: 13px;
+        }
+        .option-row label {
+            color: var(--text);
+            cursor: pointer;
+            user-select: none;
+        }
+        input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 1px solid var(--border-strong);
+            background: var(--main-bg);
+            cursor: pointer;
+            position: relative;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        input[type="checkbox"]:checked {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        input[type="checkbox"]:checked::after {
+            content: "";
+            position: absolute;
+            left: 4px;
+            top: 1px;
+            width: 4px;
+            height: 8px;
+            border: solid white;
+            border-width: 0 1.5px 1.5px 0;
+            transform: rotate(45deg);
+        }
+
+        .compact-input, select {
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: 7px;
+            border: 1px solid var(--border-strong);
+            background: var(--main-bg);
+            color: var(--text);
+            outline: none;
+            font-size: 13px;
+            transition: all 0.15s;
+        }
+        select { cursor: pointer; }
+        .compact-input:focus, select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+
+        .num-speakers {
+            width: 56px;
+            text-align: center;
+            padding: 4px 8px;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: var(--accent);
+            color: var(--accent-text);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .btn:hover { background: var(--accent-hover); }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .btn-primary-full {
+            width: 100%;
+            padding: 10px 14px;
+            font-weight: 600;
+            box-shadow: 0 1px 0 rgba(255,255,255,0.15) inset, var(--shadow-sm);
+        }
+        .btn-ghost {
+            background: var(--surface);
+            color: var(--text);
+            border-color: transparent;
+        }
+        .btn-ghost:hover { background: var(--surface-hover); }
+        .btn-icon {
+            padding: 6px 8px;
+            background: transparent;
+            color: var(--text2);
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1;
+        }
+        .btn-icon:hover { background: var(--surface-hover); color: var(--text); }
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 12px;
+            border-radius: 6px;
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+            font-weight: 500;
+            padding: 7px 14px;
+        }
+        .btn-outline:hover {
+            background: var(--accent);
+            color: var(--accent-text);
+        }
+        .btn-outline svg {
+            width: 14px;
+            height: 14px;
+            stroke-width: 2;
+        }
+        .btn-outline.success {
+            background: var(--success);
+            border-color: var(--success);
+            color: white;
+        }
+
+        .panel-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .api-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text3);
+        }
+        .api-dot.connected { background: var(--success); }
+        .api-dot.disconnected { background: var(--error); }
+
+        /* Estimate banner */
+        .estimate-banner {
+            margin-top: 8px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: var(--accent-soft);
+            border: 1px solid transparent;
+            font-size: 12px;
+            color: var(--text);
+            display: none;
+        }
+        .estimate-banner.visible { display: block; }
+        .estimate-banner .est-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+        }
+        .estimate-banner .est-row:last-child { margin-bottom: 0; }
+        .estimate-banner .est-label { color: var(--text2); }
+        .estimate-banner .est-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+        /* ─── Main panel ────────────────────────────────────────────────── */
+
+        .tabs {
+            display: flex;
+            align-items: stretch;
+            gap: 2px;
+            padding: 0 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--main-bg);
+        }
+
+        .tab {
+            background: none;
+            border: none;
+            padding: 0 14px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text2);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .tab:hover {
+            color: var(--text);
+        }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        .tab-spacer { flex: 1; }
+        .tab-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding-right: 4px;
+        }
+        .tab-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            font-size: 10px;
+            font-weight: 600;
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--text2);
+        }
+        .tab.active .tab-badge {
+            background: var(--accent-soft);
+            color: var(--accent);
+        }
+
+        .content-wrap {
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .panel {
+            display: none;
+            padding: 24px 32px 40px;
+            max-width: 880px;
+            margin: 0 auto;
+        }
+        .panel.active { display: block; }
+
+        /* Empty state */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            min-height: 100%;
+            padding: 32px;
+            color: var(--text2);
+        }
+        .empty-icon {
+            font-size: 36px;
+            margin-bottom: 14px;
+            opacity: 0.55;
+        }
+        .empty-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+            letter-spacing: -0.2px;
+        }
+        .empty-hint {
+            font-size: 13px;
+            line-height: 1.55;
+            max-width: 320px;
+        }
+        .empty-arrow {
+            display: inline-block;
+            margin-right: 4px;
+            opacity: 0.6;
+        }
+
+        /* Transcript */
+        .transcript {
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--text);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .speaker-block {
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            border-radius: 9px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+        .speaker-block:last-child { margin-bottom: 0; }
+        .speaker-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            color: white;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .speaker-text {
+            font-size: 14px;
+            line-height: 1.65;
+        }
+
+        /* Summary */
+        .summary {
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--text);
+        }
+        .summary h1, .summary h2, .summary h3 {
+            font-weight: 600;
+            margin: 18px 0 8px;
+            letter-spacing: -0.2px;
+        }
+        .summary h1 { font-size: 18px; }
+        .summary h2 { font-size: 16px; }
+        .summary h3 { font-size: 14px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+        .summary ul, .summary ol { padding-left: 22px; margin: 8px 0; }
+        .summary li { margin-bottom: 4px; }
+        .summary strong { color: var(--accent); font-weight: 600; }
+        .summary p { margin-bottom: 10px; }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 10px;
+        }
+        .stat-card {
+            padding: 14px 16px;
+            border-radius: 10px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+        .stat-label {
+            font-size: 11px;
+            color: var(--text2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.3px;
+        }
+        .stat-card.accent {
+            background: var(--accent-soft);
+            border-color: transparent;
+        }
+        .stat-card.accent .stat-value { color: var(--accent); }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .panel-title {
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: -0.4px;
+        }
+
+        /* Progress overlay (in main) */
+        .progress-zone {
+            display: none;
+            padding: 24px 32px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+        .progress-zone.visible { display: block; }
+        .progress-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+        .progress-status {
+            color: var(--text);
+            font-weight: 500;
+        }
+        .progress-pct {
+            color: var(--text2);
+            font-variant-numeric: tabular-nums;
+        }
+        .progress-track {
+            height: 5px;
+            background: var(--surface-active);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 999px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* Error banner */
+        .error-banner {
+            display: none;
+            padding: 12px 16px;
+            margin: 0 32px 16px;
+            background: rgba(255, 59, 48, 0.08);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            border-radius: 9px;
+            color: var(--error);
+            font-size: 13px;
+        }
+        .error-banner.visible { display: block; }
+
+        /* ─── Settings modal ───────────────────────────────────────────── */
+
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.35);
+            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.18s ease;
+        }
+        .modal-backdrop.open { display: flex; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .modal {
+            background: var(--main-bg);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: var(--shadow-lg);
+            width: 480px;
+            max-width: calc(100vw - 40px);
+            max-height: calc(100vh - 80px);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.22s ease;
+        }
+        .modal-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .modal-title {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+        }
+        .modal-body {
+            padding: 18px;
+            overflow-y: auto;
+        }
+        .modal-section {
+            margin-bottom: 18px;
+        }
+        .modal-section:last-child { margin-bottom: 0; }
+        .modal-section h4 {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text2);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .modal-section h4 .status-text {
+            font-size: 11px;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+            color: var(--text3);
+        }
+        .input-group {
+            display: flex;
+            gap: 6px;
+        }
+        .input-group .compact-input { flex: 1; }
+        .modal-hint {
+            font-size: 11.5px;
+            line-height: 1.5;
+            color: var(--text2);
+            margin-top: 8px;
+        }
+
+        /* Scrollbars: macOS-like */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.18);
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            border-radius: 999px;
+        }
+        @media (prefers-color-scheme: dark) {
+            ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); background-clip: padding-box; }
+        }
+        ::-webkit-scrollbar-thumb:hover { background-clip: padding-box; opacity: 1; }
+        ::-webkit-scrollbar-track { background: transparent; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Projectizer</h1>
-            <p>Trascrivi riunioni, genera contesto per PRD</p>
-        </header>
-
-        <div class="settings-bar">
-            <button class="settings-btn" onclick="toggleSettings()">
-                <span class="api-status" id="apiStatus"></span>
-                Impostazioni
-            </button>
-        </div>
-
-        <div class="settings-panel card" id="settingsPanel">
-            <div class="settings-section">
-                <h2>OpenAI API Key <span id="openaiStatus" style="font-size:11px;color:var(--text2);text-transform:none;letter-spacing:0;margin-left:4px"></span></h2>
-                <div class="input-group">
-                    <input type="password" id="apiKeyInput" placeholder="sk-...">
-                    <button class="btn btn-sm" onclick="saveApiKey()">Salva</button>
-                </div>
-            </div>
-            <div class="settings-section">
-                <h2>HuggingFace Token <span id="hfStatus" style="font-size:11px;color:var(--text2);text-transform:none;letter-spacing:0;margin-left:4px"></span></h2>
-                <div class="input-group">
-                    <input type="password" id="hfTokenInput" placeholder="hf_...">
-                    <button class="btn btn-sm" onclick="saveHfToken()">Salva</button>
-                </div>
-                <div class="hint">
-                    Serve solo per "Identifica parlanti". Crea un token su
-                    <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>
-                    e accetta i terms di
-                    <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noopener">pyannote/speaker-diarization-3.1</a>
-                    e <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noopener">pyannote/segmentation-3.0</a>.
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Carica Audio</h2>
-            <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
-                <div class="dropzone-icon">🎙</div>
-                <div class="dropzone-text">
-                    <strong>Trascina qui</strong> i file audio o clicca per selezionarli<br>
-                    <small>MP3, WAV, M4A, OGG, WEBM, MP4 — anche piu file, verranno ordinati automaticamente</small>
-                </div>
-            </div>
-            <input type="file" id="fileInput" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.ogg,.webm,.flac" multiple hidden>
-
-            <div class="file-list" id="fileList" style="display:none">
-                <div class="file-list-header">
-                    <span id="fileListCount"></span>
-                    <span class="sort-badge" id="sortBadge"></span>
-                </div>
-                <div id="fileListItems"></div>
-                <button class="btn btn-sm btn-outline" onclick="clearFiles()" style="margin-top:8px">Rimuovi tutti</button>
+    <div class="app">
+        <!-- ─── Sidebar ─────────────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Projectizer</div>
+                <button class="btn-icon" onclick="openSettings()" title="Impostazioni">
+                    <span class="api-dot" id="apiStatus"></span>
+                    <span style="margin-left: 6px;">⚙</span>
+                </button>
             </div>
 
-            <div class="estimate-box" id="estimateBox">
-                <span class="estimate-loading" id="estimateLoading">Analisi file...</span>
-                <div class="estimate-details" id="estimateDetails">
-                    <span>Durata totale: <strong id="estDuration"></strong></span>
-                    <span>Costo stimato: <strong id="estCost"></strong></span>
-                    <span class="estimate-breakdown" id="estBreakdown"></span>
+            <div class="sidebar-body">
+                <!-- Upload -->
+                <div class="section">
+                    <div class="section-label">Audio</div>
+                    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+                        <div class="dropzone-icon">🎙</div>
+                        <div class="dropzone-title">Trascina o clicca</div>
+                        <div class="dropzone-hint">MP3 · WAV · M4A · OGG · MP4</div>
+                    </div>
+                    <input type="file" id="fileInput" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.ogg,.webm,.flac" multiple hidden>
+                    <div class="estimate-banner" id="estimateBox">
+                        <div class="est-row">
+                            <span class="est-label">Durata</span>
+                            <span class="est-val" id="estDuration">…</span>
+                        </div>
+                        <div class="est-row">
+                            <span class="est-label">Costo stimato</span>
+                            <span class="est-val" id="estCost">…</span>
+                        </div>
+                        <div class="est-row" id="estBreakdownRow" style="display:none">
+                            <span class="est-label" id="estBreakdown" style="font-size:10.5px"></span>
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
 
-        <div class="card">
-            <h2>Opzioni</h2>
-            <div class="options">
-                <div class="option-item">
-                    <input type="checkbox" id="summaryToggle" checked onchange="if(selectedFiles.length) fetchEstimate()">
-                    <label for="summaryToggle">Genera riassunto</label>
+                <!-- Files -->
+                <div class="section" id="fileSection" style="display:none">
+                    <div class="files-info">
+                        <span id="fileListCount"></span>
+                        <span class="sort-tag" id="sortBadge" style="display:none"></span>
+                    </div>
+                    <div id="fileListItems"></div>
+                    <button class="btn btn-ghost btn-sm" onclick="clearFiles()" style="margin-top: 8px; width: 100%;">Rimuovi tutti</button>
                 </div>
-                <div class="option-item">
-                    <input type="checkbox" id="diarizeToggle" onchange="toggleDiarize()">
-                    <label for="diarizeToggle">Identifica parlanti</label>
-                </div>
-                <div class="option-item" id="speakersCountWrap" style="display:none">
-                    <label for="numSpeakersInput">Parlanti:</label>
-                    <input type="number" class="num-speakers" id="numSpeakersInput" min="0" max="20" value="0" placeholder="auto">
-                </div>
-                <div class="option-item">
-                    <label for="langSelect">Lingua:</label>
-                    <select id="langSelect">
-                        <option value="">Auto-detect</option>
-                        <option value="it" selected>Italiano</option>
-                        <option value="en">English</option>
-                        <option value="es">Español</option>
-                        <option value="fr">Français</option>
-                        <option value="de">Deutsch</option>
-                    </select>
-                </div>
-            </div>
-            <div id="diarizeWarning" style="display:none;margin-top:10px;font-size:12px;color:var(--text2)">
-                Il processing locale della diarization richiede tempo extra (≈ 0.3–0.5x realtime su Mac M-series).
-                Al primo utilizzo scarica ~1GB di modelli.
-            </div>
-            <div style="margin-top: 16px;">
-                <button class="btn" id="transcribeBtn" onclick="transcribe()" disabled>Trascrivi</button>
-            </div>
-        </div>
 
-        <div class="progress-section" id="progressSection">
-            <div class="card">
-                <div class="progress-bar-container">
-                    <div class="progress-bar" id="progressBar"></div>
-                </div>
-                <div class="progress-status" id="progressStatus">Preparazione...</div>
-            </div>
-        </div>
-
-        <div class="error-msg" id="errorMsg"></div>
-
-        <div class="results-section" id="resultsSection">
-            <div class="card">
-                <h2>Risultati</h2>
-                <div class="stats">
-                    <div class="stat">Durata: <span class="stat-value" id="statDuration"></span></div>
-                    <div class="stat">Originale: <span class="stat-value" id="statOriginal"></span></div>
-                    <div class="stat">Compresso: <span class="stat-value" id="statCompressed"></span></div>
-                    <div class="stat">Riduzione: <span class="stat-value" id="statRatio"></span></div>
-                    <div class="stat">Segmenti: <span class="stat-value" id="statChunks"></span></div>
-                </div>
-                <div class="stats" style="margin-top: 8px;">
-                    <div class="stat">Whisper: <span class="stat-value" id="statCostWhisper"></span></div>
-                    <div class="stat" id="statCostSummaryWrap" style="display:none">Riassunto: <span class="stat-value" id="statCostSummary"></span></div>
-                    <div class="stat" style="border-left: 2px solid var(--accent); padding-left: 16px;">Totale: <span class="stat-value" id="statCostTotal"></span></div>
+                <!-- Options -->
+                <div class="section">
+                    <div class="section-label">Opzioni</div>
+                    <div class="option-row">
+                        <input type="checkbox" id="summaryToggle" checked onchange="if(selectedFiles.length) fetchEstimate()">
+                        <label for="summaryToggle">Genera riassunto</label>
+                    </div>
+                    <div class="option-row">
+                        <input type="checkbox" id="diarizeToggle" onchange="toggleDiarize()">
+                        <label for="diarizeToggle">Identifica parlanti</label>
+                    </div>
+                    <div class="option-row" id="speakersCountWrap" style="display:none; padding-left: 26px;">
+                        <label for="numSpeakersInput" style="font-size: 12px; color: var(--text2);">N°</label>
+                        <input type="number" class="compact-input num-speakers" id="numSpeakersInput" min="0" max="20" value="0" placeholder="auto">
+                    </div>
+                    <div id="diarizeWarning" style="display:none; font-size: 11px; color: var(--text2); margin-top: 6px; padding: 0 4px; line-height: 1.5;">
+                        ~0.3–0.5× realtime su Mac M-series. Primo run: ~1GB di download.
+                    </div>
+                    <div class="option-row" style="margin-top: 10px;">
+                        <label for="langSelect" style="font-size: 12px; color: var(--text2); flex-shrink: 0;">Lingua</label>
+                        <select id="langSelect" style="flex: 1;">
+                            <option value="">Auto-detect</option>
+                            <option value="it" selected>Italiano</option>
+                            <option value="en">English</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                            <option value="de">Deutsch</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
-            <div class="card">
-                <h2>Trascrizione</h2>
-                <div class="transcript-box" id="transcriptBox"></div>
-                <div class="copy-bar">
-                    <button class="btn btn-sm btn-outline" onclick="copyText('transcript')">Copia trascrizione</button>
-                    <button class="btn btn-sm btn-outline" onclick="downloadText('transcript')">Scarica .txt</button>
-                </div>
+            <div class="sidebar-footer">
+                <button class="btn btn-primary-full" id="transcribeBtn" onclick="transcribe()" disabled>
+                    Trascrivi
+                </button>
             </div>
+        </aside>
 
-            <div class="summary-section" id="summarySection">
-                <div class="card">
-                    <h2>Riassunto</h2>
-                    <div class="summary-box" id="summaryBox"></div>
-                    <div class="copy-bar" style="margin-top: 12px;">
-                        <button class="btn btn-sm btn-outline" onclick="copyText('summary')">Copia riassunto</button>
-                        <button class="btn btn-sm btn-outline" onclick="downloadText('summary')">Scarica .md</button>
+        <!-- ─── Main ───────────────────────────────────────────────── -->
+        <main class="main">
+            <nav class="tabs">
+                <button class="tab active" data-tab="transcript" onclick="switchTab('transcript')">
+                    Trascrizione
+                </button>
+                <button class="tab" data-tab="summary" onclick="switchTab('summary')">
+                    Riassunto
+                </button>
+                <button class="tab" data-tab="stats" onclick="switchTab('stats')">
+                    Stats
+                </button>
+                <span class="tab-spacer"></span>
+            </nav>
+
+            <div class="content-wrap" id="contentWrap">
+                <!-- Empty state when no results -->
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">🎙</div>
+                    <div class="empty-title">Nessuna trascrizione</div>
+                    <div class="empty-hint">
+                        <span class="empty-arrow">←</span>
+                        Carica un file audio dalla sidebar e clicca <strong>Trascrivi</strong> per iniziare.
+                    </div>
+                </div>
+
+                <!-- Progress -->
+                <div class="progress-zone" id="progressSection">
+                    <div class="progress-row">
+                        <span class="progress-status" id="progressStatus">Preparazione…</span>
+                        <span class="progress-pct" id="progressPct">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="progressBar"></div>
+                    </div>
+                </div>
+
+                <!-- Error -->
+                <div class="error-banner" id="errorMsg"></div>
+
+                <!-- Transcript -->
+                <section class="panel active" id="panel-transcript" style="display:none">
+                    <div class="panel-header">
+                        <div class="panel-title">Trascrizione</div>
+                        <div class="panel-actions">
+                            <button class="btn btn-outline" onclick="copyText('transcript', this)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                <span>Copia</span>
+                            </button>
+                            <button class="btn btn-outline" onclick="downloadText('transcript','txt')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>Scarica .txt</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="transcript" id="transcriptBox"></div>
+                </section>
+
+                <!-- Summary -->
+                <section class="panel" id="panel-summary" style="display:none">
+                    <div class="panel-header">
+                        <div class="panel-title">Riassunto</div>
+                        <div class="panel-actions">
+                            <button class="btn btn-outline" onclick="copyText('summary', this)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                <span>Copia</span>
+                            </button>
+                            <button class="btn btn-outline" onclick="downloadText('summary','md')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                <span>Scarica .md</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="summary" id="summaryBox"></div>
+                </section>
+
+                <!-- Stats -->
+                <section class="panel" id="panel-stats" style="display:none">
+                    <div class="panel-header">
+                        <div class="panel-title">Statistiche</div>
+                    </div>
+                    <div class="stats-grid" id="statsGrid"></div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- ─── Settings modal ──────────────────────────────────────────── -->
+    <div class="modal-backdrop" id="settingsModal" onclick="if(event.target===this) closeSettings()">
+        <div class="modal" role="dialog" aria-label="Impostazioni">
+            <div class="modal-header">
+                <div class="modal-title">Impostazioni</div>
+                <button class="btn-icon" onclick="closeSettings()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <h4>
+                        <span>OpenAI API Key</span>
+                        <span class="status-text" id="openaiStatus"></span>
+                    </h4>
+                    <div class="input-group">
+                        <input type="password" class="compact-input" id="apiKeyInput" placeholder="sk-…">
+                        <button class="btn btn-sm" onclick="saveApiKey()">Salva</button>
+                    </div>
+                    <div class="modal-hint">
+                        Necessaria per trascrizione (Whisper) e riassunto (GPT-4o-mini).
+                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Genera una API key</a>.
+                    </div>
+                </div>
+
+                <div class="modal-section">
+                    <h4>
+                        <span>HuggingFace Token</span>
+                        <span class="status-text" id="hfStatus"></span>
+                    </h4>
+                    <div class="input-group">
+                        <input type="password" class="compact-input" id="hfTokenInput" placeholder="hf_…">
+                        <button class="btn btn-sm" onclick="saveHfToken()">Salva</button>
+                    </div>
+                    <div class="modal-hint">
+                        Necessario solo per la diarization (identificare i parlanti). Crea un token su
+                        <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co</a>
+                        e accetta i terms di
+                        <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noopener">speaker-diarization-3.1</a>
+                        e <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noopener">segmentation-3.0</a>.
                     </div>
                 </div>
             </div>
@@ -360,13 +1002,15 @@
     </div>
 
     <script>
-        let selectedFiles = [];  // Array of File objects
-        let fileOrder = [];      // Ordered filenames from estimate
+        let selectedFiles = [];
+        let fileOrder = [];
         let resultData = null;
+        let activeTab = 'transcript';
+        let hasHfToken = false;
 
         checkApiKey();
 
-        // Drag and drop
+        // ─── Drag & drop ─────────────────────────────────────────────
         const dropzone = document.getElementById('dropzone');
         ['dragenter', 'dragover'].forEach(evt => {
             dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -403,7 +1047,7 @@
         function clearFiles() {
             selectedFiles = [];
             fileOrder = [];
-            document.getElementById('fileList').style.display = 'none';
+            document.getElementById('fileSection').style.display = 'none';
             document.getElementById('estimateBox').classList.remove('visible');
             document.getElementById('transcribeBtn').disabled = true;
             document.getElementById('fileInput').value = '';
@@ -416,40 +1060,38 @@
             container.innerHTML = '';
             files.forEach((fi, i) => {
                 const div = document.createElement('div');
-                div.className = 'file-item';
-                const durText = fi.duration_sec ? ' — ' + formatDuration(fi.duration_sec / 60) : '';
-                const metaText = fi.creation_time ? fi.creation_time.replace('T', ' ').substring(0, 19) : '';
+                div.className = 'file-row';
+                const durText = fi.duration_sec ? formatDuration(fi.duration_sec / 60) : fi.size_mb + ' MB';
                 div.innerHTML = `
-                    <span class="file-order">${i + 1}</span>
-                    <span class="file-name">${fi.name}</span>
-                    <span class="file-meta">${fi.size_mb} MB${durText}${metaText ? '<br>' + metaText : ''}</span>
-                    <button class="file-remove" onclick="removeFileAt(${i})">✕</button>
+                    <span class="file-order-pill">${i + 1}</span>
+                    <span class="file-name" title="${escapeHtml(fi.name)}">${escapeHtml(fi.name)}</span>
+                    <span class="file-meta">${durText}</span>
+                    <button class="file-remove" onclick="removeFileAt(${i})" title="Rimuovi">✕</button>
                 `;
                 container.appendChild(div);
             });
 
-            document.getElementById('fileListCount').textContent = files.length + ' file' + (files.length > 1 ? '' : '');
-            if (estimateData && files.length > 1) {
-                const badge = document.getElementById('sortBadge');
-                badge.textContent = estimateData.sort_method === 'metadata' ? 'Ordinati per data creazione' : 'Ordine originale';
-                badge.style.display = '';
+            const count = files.length;
+            document.getElementById('fileListCount').textContent = count + (count === 1 ? ' file' : ' file');
+            const sortBadge = document.getElementById('sortBadge');
+            if (estimateData && count > 1) {
+                sortBadge.textContent = estimateData.sort_method === 'metadata' ? 'Per data' : 'Originale';
+                sortBadge.style.display = '';
             } else {
-                document.getElementById('sortBadge').style.display = 'none';
+                sortBadge.style.display = 'none';
             }
-            document.getElementById('fileList').style.display = '';
+            document.getElementById('fileSection').style.display = '';
         }
 
         async function fetchEstimate() {
             if (selectedFiles.length === 0) return;
 
             const box = document.getElementById('estimateBox');
-            const loading = document.getElementById('estimateLoading');
-            const details = document.getElementById('estimateDetails');
             box.classList.add('visible');
-            loading.style.display = '';
-            details.classList.remove('ready');
+            document.getElementById('estDuration').textContent = '…';
+            document.getElementById('estCost').textContent = '…';
+            document.getElementById('estBreakdownRow').style.display = 'none';
 
-            // Show basic file list immediately
             renderFileList(null);
 
             try {
@@ -459,7 +1101,6 @@
                 if (!resp.ok) throw new Error('Estimate failed');
                 const est = await resp.json();
 
-                // Update file order and list with metadata
                 fileOrder = est.files.map(f => f.name);
                 renderFileList(est);
 
@@ -467,52 +1108,53 @@
                 const withSummary = document.getElementById('summaryToggle').checked;
                 const totalEst = withSummary ? est.cost_total_est : est.cost_whisper;
                 document.getElementById('estCost').textContent = formatCost(totalEst);
-                const parts = ['Whisper: ' + formatCost(est.cost_whisper)];
-                if (withSummary) parts.push('Riassunto: ~' + formatCost(est.cost_summary_est));
-                document.getElementById('estBreakdown').textContent = '(' + parts.join(' + ') + ')';
 
-                loading.style.display = 'none';
-                details.classList.add('ready');
+                const parts = ['Whisper ' + formatCost(est.cost_whisper)];
+                if (withSummary) parts.push('Riassunto ~' + formatCost(est.cost_summary_est));
+                document.getElementById('estBreakdown').textContent = parts.join(' · ');
+                document.getElementById('estBreakdownRow').style.display = '';
             } catch (e) {
-                loading.textContent = 'Stima non disponibile';
-                // Still allow transcription
+                document.getElementById('estDuration').textContent = '—';
+                document.getElementById('estCost').textContent = 'n/d';
             }
         }
 
-        function formatSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-            return (bytes / 1048576).toFixed(1) + ' MB';
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
         }
-
         function formatCost(val) {
             if (val < 0.01) return '$' + val.toFixed(4);
             return '$' + val.toFixed(2);
         }
-
         function formatDuration(min) {
             if (min < 1) return Math.round(min * 60) + 's';
             const m = Math.floor(min);
             const s = Math.round((min - m) * 60);
-            return m + 'min ' + (s > 0 ? s + 's' : '');
+            return m + 'm' + (s > 0 ? ' ' + s + 's' : '');
         }
 
-        function toggleSettings() {
-            document.getElementById('settingsPanel').classList.toggle('open');
+        // ─── Settings modal ──────────────────────────────────────────
+        function openSettings() {
+            document.getElementById('settingsModal').classList.add('open');
         }
-
-        let hasHfToken = false;
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.remove('open');
+        }
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeSettings();
+        });
 
         async function checkApiKey() {
             const resp = await fetch('/api/config');
             const data = await resp.json();
             const dot = document.getElementById('apiStatus');
-            dot.className = 'api-status ' + (data.has_api_key ? 'connected' : 'disconnected');
-            if (!data.has_api_key) document.getElementById('settingsPanel').classList.add('open');
+            dot.className = 'api-dot ' + (data.has_api_key ? 'connected' : 'disconnected');
 
-            document.getElementById('openaiStatus').textContent = data.has_api_key ? '· salvato' : '· non configurato';
+            document.getElementById('openaiStatus').textContent = data.has_api_key ? '✓ salvato' : 'non configurato';
             hasHfToken = !!data.has_hf_token;
-            document.getElementById('hfStatus').textContent = hasHfToken ? '· salvato' : '· non configurato';
+            document.getElementById('hfStatus').textContent = hasHfToken ? '✓ salvato' : 'non configurato';
+
+            if (!data.has_api_key) openSettings();
         }
 
         async function saveApiKey() {
@@ -539,11 +1181,17 @@
             const on = document.getElementById('diarizeToggle').checked;
             document.getElementById('speakersCountWrap').style.display = on ? '' : 'none';
             document.getElementById('diarizeWarning').style.display = on ? '' : 'none';
-            if (on && !hasHfToken) {
-                document.getElementById('settingsPanel').classList.add('open');
-            }
+            if (on && !hasHfToken) openSettings();
         }
 
+        // ─── Tabs ────────────────────────────────────────────────────
+        function switchTab(name) {
+            activeTab = name;
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+            document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+        }
+
+        // ─── Transcribe ──────────────────────────────────────────────
         async function transcribe() {
             if (!selectedFiles.length) return;
 
@@ -553,18 +1201,26 @@
             const progressSection = document.getElementById('progressSection');
             const progressBar = document.getElementById('progressBar');
             const progressStatus = document.getElementById('progressStatus');
+            const progressPct = document.getElementById('progressPct');
             const errorMsg = document.getElementById('errorMsg');
-            const resultsSection = document.getElementById('resultsSection');
+
+            // Hide empty state and any previous results
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('panel-transcript').style.display = 'none';
+            document.getElementById('panel-summary').style.display = 'none';
+            document.getElementById('panel-stats').style.display = 'none';
 
             progressSection.classList.add('visible');
-            resultsSection.classList.remove('visible');
             errorMsg.classList.remove('visible');
 
-            progressBar.style.width = '5%';
-            progressStatus.textContent = selectedFiles.length > 1 ? 'Caricamento e unione file...' : 'Caricamento...';
+            const setPct = p => {
+                progressBar.style.width = p + '%';
+                progressPct.textContent = Math.round(p) + '%';
+            };
+            setPct(5);
+            progressStatus.textContent = selectedFiles.length > 1 ? 'Caricamento e unione…' : 'Caricamento…';
 
             const form = new FormData();
-            // Send files in the order determined by estimate
             const orderedFiles = fileOrder.length
                 ? fileOrder.map(name => selectedFiles.find(f => f.name === name)).filter(Boolean)
                 : selectedFiles;
@@ -576,7 +1232,7 @@
             form.append('num_speakers', isNaN(numSpk) ? 0 : numSpk);
             if (fileOrder.length) form.append('file_order', fileOrder.join(','));
 
-            const stepProgress = { compress: 10, split: 20, transcribe: 35, diarize: 75, summary: 90 };
+            const stepProgress = { compress: 12, split: 22, transcribe: 38, diarize: 75, summary: 90 };
 
             try {
                 const resp = await fetch('/api/transcribe', { method: 'POST', body: form });
@@ -592,7 +1248,6 @@
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-
                     buffer += decoder.decode(value, { stream: true });
                     const events = buffer.split('\n\n');
                     buffer = events.pop();
@@ -612,17 +1267,17 @@
                             progressStatus.textContent = d.message;
                             let pct = stepProgress[d.step] || 50;
                             if (d.step === 'transcribe' && d.total > 1) {
-                                pct = 20 + (d.current / d.total) * 40;
+                                pct = 22 + (d.current / d.total) * 35;
                             }
-                            progressBar.style.width = pct + '%';
+                            setPct(pct);
                         } else if (eventType === 'result') {
                             resultData = JSON.parse(eventData);
-                            progressBar.style.width = '100%';
+                            setPct(100);
                             progressStatus.textContent = 'Completato!';
                             setTimeout(() => {
                                 progressSection.classList.remove('visible');
                                 showResults(resultData);
-                            }, 400);
+                            }, 350);
                         } else if (eventType === 'error') {
                             const d = JSON.parse(eventData);
                             throw new Error(d.message);
@@ -631,6 +1286,7 @@
                 }
             } catch (err) {
                 progressSection.classList.remove('visible');
+                document.getElementById('emptyState').style.display = '';
                 errorMsg.textContent = err.message;
                 errorMsg.classList.add('visible');
             } finally {
@@ -638,42 +1294,30 @@
             }
         }
 
+        // ─── Render results ──────────────────────────────────────────
         function showResults(data) {
-            document.getElementById('statDuration').textContent = formatDuration(data.stats.duration_min);
-            document.getElementById('statOriginal').textContent = data.stats.original_size_mb + ' MB';
-            document.getElementById('statCompressed').textContent = data.stats.compressed_size_mb + ' MB';
-            document.getElementById('statRatio').textContent = data.stats.compression_ratio + '%';
-            document.getElementById('statChunks').textContent = data.stats.chunks;
-
-            document.getElementById('statCostWhisper').textContent = formatCost(data.stats.cost_whisper);
-            document.getElementById('statCostTotal').textContent = formatCost(data.stats.cost_total);
-            if (data.stats.cost_summary > 0) {
-                document.getElementById('statCostSummary').textContent = formatCost(data.stats.cost_summary);
-                document.getElementById('statCostSummaryWrap').style.display = '';
-            } else {
-                document.getElementById('statCostSummaryWrap').style.display = 'none';
-            }
-
             renderTranscript(data.transcript, data.diarized);
 
-            const summarySection = document.getElementById('summarySection');
             if (data.summary) {
                 document.getElementById('summaryBox').innerHTML = markdownToHtml(data.summary);
-                summarySection.style.display = 'block';
-            } else {
-                summarySection.style.display = 'none';
+                document.getElementById('panel-summary').style.display = '';
             }
 
-            document.getElementById('resultsSection').classList.add('visible');
+            renderStats(data.stats);
+            document.getElementById('panel-transcript').style.display = '';
+            document.getElementById('panel-stats').style.display = '';
+
+            switchTab('transcript');
         }
 
-        const SPEAKER_COLORS = ['#6c5ce7', '#00b894', '#fdcb6e', '#e17055', '#74b9ff', '#fd79a8', '#55efc4', '#ffeaa7'];
+        const SPEAKER_COLORS = ['#6c5ce7', '#28b760', '#fdcb6e', '#ff7e5f', '#5ac8fa', '#ff79a8', '#34d4b3', '#f5a623'];
 
         function renderTranscript(text, diarized) {
             const box = document.getElementById('transcriptBox');
             box.innerHTML = '';
             if (!diarized) {
                 box.textContent = text;
+                box.classList.remove('diarized');
                 return;
             }
             const blocks = text.split(/\n\n+/);
@@ -692,13 +1336,40 @@
                 const badge = document.createElement('span');
                 badge.className = 'speaker-badge';
                 badge.textContent = label;
-                badge.style.background = num >= 0 ? SPEAKER_COLORS[num % SPEAKER_COLORS.length] : '#555';
+                badge.style.background = num >= 0 ? SPEAKER_COLORS[num % SPEAKER_COLORS.length] : '#888';
                 const textEl = document.createElement('div');
                 textEl.className = 'speaker-text';
                 textEl.textContent = body;
                 wrap.appendChild(badge);
                 wrap.appendChild(textEl);
                 box.appendChild(wrap);
+            }
+        }
+
+        function renderStats(stats) {
+            const grid = document.getElementById('statsGrid');
+            grid.innerHTML = '';
+            const cards = [
+                { label: 'Durata', value: formatDuration(stats.duration_min) },
+                { label: 'Originale', value: stats.original_size_mb + ' MB' },
+                { label: 'Compresso', value: stats.compressed_size_mb + ' MB' },
+                { label: 'Riduzione', value: stats.compression_ratio + '%' },
+                { label: 'Segmenti', value: stats.chunks },
+                { label: 'Costo Whisper', value: formatCost(stats.cost_whisper) },
+            ];
+            if (stats.cost_summary > 0) {
+                cards.push({ label: 'Costo Riassunto', value: formatCost(stats.cost_summary) });
+            }
+            cards.push({ label: 'Totale', value: formatCost(stats.cost_total), accent: true });
+
+            for (const c of cards) {
+                const div = document.createElement('div');
+                div.className = 'stat-card' + (c.accent ? ' accent' : '');
+                div.innerHTML = `
+                    <div class="stat-label">${c.label}</div>
+                    <div class="stat-value">${c.value}</div>
+                `;
+                grid.appendChild(div);
             }
         }
 
@@ -709,25 +1380,29 @@
                 .replace(/^# (.+)$/gm, '<h1>$1</h1>')
                 .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                 .replace(/^\- (.+)$/gm, '<li>$1</li>')
-                .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-                .replace(/\n{2,}/g, '<br><br>')
-                .replace(/\n/g, '<br>');
+                .replace(/(<li>[\s\S]*?<\/li>)/, '<ul>$1</ul>')
+                .replace(/\n{2,}/g, '</p><p>')
+                .replace(/^(.+)/, '<p>$1')
+                .replace(/(.+)$/, '$1</p>');
         }
 
-        function copyText(type) {
+        function copyText(type, btn) {
             if (!resultData) return;
             const text = type === 'transcript' ? resultData.transcript : resultData.summary;
             navigator.clipboard.writeText(text);
-            event.target.textContent = 'Copiato!';
+            const span = btn.querySelector('span');
+            const orig = span.textContent;
+            span.textContent = 'Copiato ✓';
+            btn.classList.add('success');
             setTimeout(() => {
-                event.target.textContent = type === 'transcript' ? 'Copia trascrizione' : 'Copia riassunto';
-            }, 1500);
+                span.textContent = orig;
+                btn.classList.remove('success');
+            }, 1400);
         }
 
-        function downloadText(type) {
+        function downloadText(type, ext) {
             if (!resultData) return;
             const text = type === 'transcript' ? resultData.transcript : resultData.summary;
-            const ext = type === 'transcript' ? 'txt' : 'md';
             const blob = new Blob([text], { type: 'text/plain' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
