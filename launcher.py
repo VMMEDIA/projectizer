@@ -21,9 +21,6 @@ import urllib.error
 # (config.json, uploads/, static/) resolve correctly.
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# Same MPS fallback hint as app.py — set before torch is touched anywhere.
-os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-
 PORT = int(os.environ.get("PORT", 8899))
 HOST = "127.0.0.1"
 URL = f"http://{HOST}:{PORT}"
@@ -68,7 +65,11 @@ def main() -> int:
         height=900,
         min_size=(900, 600),
     )
-    webview.start()
+    # private_mode=False: pywebview's default uses a private WKWebView session
+    # which strips navigator.mediaDevices.getUserMedia. We need it for the mic
+    # recording feature, so disable private mode. Cookies/localStorage also
+    # persist across launches as a side effect.
+    webview.start(private_mode=False)
     return 0
 
 

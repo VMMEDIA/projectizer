@@ -9,6 +9,13 @@
 # Resolve absolute path to Resources/ inside this bundle.
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../Resources" && pwd)"
 
+# Finder-launched apps inherit a minimal PATH (/usr/bin:/bin:...) that is
+# missing common Homebrew / MacPorts locations, so subprocess calls to
+# `ffprobe` and `ffmpeg` fail with FileNotFoundError. Prepend the standard
+# brew/MacPorts dirs so audio probing works no matter where the user
+# installed FFmpeg.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:$PATH"
+
 # Don't cd into PROJECT_DIR yet. macOS TCC may sandbox files outside the
 # .app bundle even if we don't read them, but reading inside our own bundle
 # is allowed. Python startup needs a non-TCC cwd, so we run from /tmp.
