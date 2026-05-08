@@ -3,3 +3,6 @@ uvicorn==0.30.0
 python-multipart==0.0.9
 openai>=1.60.0
 pydub==0.25.1
+pyannote.audio>=3.1.1
+torch>=2.2.0
+torchaudio>=2.2.0

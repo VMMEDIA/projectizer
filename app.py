@@ -10,6 +10,9 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+# Let MPS fall back to CPU for ops pyannote needs that aren't implemented on Metal
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
@@ -22,6 +25,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 CONFIG_FILE = Path("config.json")
 
 MAX_WHISPER_SIZE = 25 * 1024 * 1024  # 25MB
+
+_diarization_pipeline = None
+_diarization_pipeline_token = None
 
 
 def load_config() -> dict:
@@ -132,13 +138,120 @@ def split_audio(file_path: str, max_size: int = MAX_WHISPER_SIZE) -> list[str]:
     return chunks
 
 
-def transcribe_file(client: openai.OpenAI, file_path: str, language: str | None = None) -> str:
+def transcribe_file(
+    client: openai.OpenAI,
+    file_path: str,
+    language: str | None = None,
+    want_segments: bool = False,
+):
+    """Transcribe a single file. Returns str, or dict with 'text' + 'segments' when want_segments=True."""
     with open(file_path, "rb") as f:
-        kwargs = {"model": "whisper-1", "file": f, "response_format": "text"}
+        kwargs = {"model": "whisper-1", "file": f}
         if language:
             kwargs["language"] = language
-        transcript = client.audio.transcriptions.create(**kwargs)
-    return transcript
+        if want_segments:
+            kwargs["response_format"] = "verbose_json"
+            resp = client.audio.transcriptions.create(**kwargs)
+            segments = [
+                {"start": float(s.start), "end": float(s.end), "text": s.text.strip()}
+                for s in (resp.segments or [])
+            ]
+            return {"text": resp.text, "segments": segments}
+        kwargs["response_format"] = "text"
+        return client.audio.transcriptions.create(**kwargs)
+
+
+def get_diarization_pipeline(hf_token: str):
+    """Load pyannote pipeline (lazy, cached). Returns the pipeline object."""
+    global _diarization_pipeline, _diarization_pipeline_token
+    if _diarization_pipeline is not None and _diarization_pipeline_token == hf_token:
+        return _diarization_pipeline
+
+    import torch
+    from pyannote.audio import Pipeline
+
+    pipeline = Pipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1",
+        use_auth_token=hf_token,
+    )
+    if pipeline is None:
+        raise RuntimeError(
+            "Impossibile caricare il modello di diarization. "
+            "Verifica che il token HuggingFace sia valido e di aver accettato i terms per "
+            "pyannote/speaker-diarization-3.1 e pyannote/segmentation-3.0 su huggingface.co."
+        )
+
+    if torch.backends.mps.is_available():
+        try:
+            pipeline.to(torch.device("mps"))
+        except Exception:
+            pipeline.to(torch.device("cpu"))
+    else:
+        pipeline.to(torch.device("cpu"))
+
+    _diarization_pipeline = pipeline
+    _diarization_pipeline_token = hf_token
+    return pipeline
+
+
+def diarize_audio(file_path: str, hf_token: str, num_speakers: int | None = None) -> list[dict]:
+    """Return list of {start, end, speaker} segments. Speaker is 'SPEAKER_00', 'SPEAKER_01', etc."""
+    pipeline = get_diarization_pipeline(hf_token)
+    kwargs = {}
+    if num_speakers and num_speakers > 0:
+        kwargs["num_speakers"] = int(num_speakers)
+    diarization = pipeline(file_path, **kwargs)
+    turns = []
+    for turn, _, speaker in diarization.itertracks(yield_label=True):
+        turns.append({"start": float(turn.start), "end": float(turn.end), "speaker": speaker})
+    return turns
+
+
+def _assign_speaker(seg_start: float, seg_end: float, turns: list[dict]) -> str | None:
+    """Return speaker label with max temporal overlap for this segment."""
+    best_speaker = None
+    best_overlap = 0.0
+    for t in turns:
+        overlap = max(0.0, min(seg_end, t["end"]) - max(seg_start, t["start"]))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_speaker = t["speaker"]
+    return best_speaker
+
+
+def merge_segments_with_speakers(segments: list[dict], turns: list[dict]) -> str:
+    """Assign a speaker to each whisper segment, then group consecutive same-speaker segments.
+    Returns a formatted transcript with 'Persona N: ...' blocks.
+    """
+    if not segments:
+        return ""
+
+    # Build stable speaker -> Persona N mapping in order of first appearance
+    speaker_map: dict[str, int] = {}
+    labeled = []
+    for seg in segments:
+        spk = _assign_speaker(seg["start"], seg["end"], turns)
+        if spk is not None and spk not in speaker_map:
+            speaker_map[spk] = len(speaker_map) + 1
+        labeled.append((spk, seg["text"]))
+
+    # Group consecutive segments by speaker
+    blocks: list[tuple[int | None, list[str]]] = []
+    for spk, text in labeled:
+        persona_num = speaker_map.get(spk) if spk else None
+        if blocks and blocks[-1][0] == persona_num:
+            blocks[-1][1].append(text)
+        else:
+            blocks.append((persona_num, [text]))
+
+    lines = []
+    for persona_num, texts in blocks:
+        body = " ".join(t for t in texts if t).strip()
+        if not body:
+            continue
+        label = f"Persona {persona_num}" if persona_num else "Sconosciuto"
+        lines.append(f"{label}: {body}")
+    return "\n\n".join(lines)
 
 
 def save_upload(upload_file_content: bytes, suffix: str) -> str:
@@ -159,8 +272,10 @@ async def index():
 @app.get("/api/config")
 async def get_config():
     config = load_config()
-    has_key = bool(config.get("openai_api_key"))
-    return {"has_api_key": has_key}
+    return {
+        "has_api_key": bool(config.get("openai_api_key")),
+        "has_hf_token": bool(config.get("hf_token")),
+    }
 
 
 @app.post("/api/config")
@@ -168,6 +283,18 @@ async def set_config(api_key: str = Form(...)):
     config = load_config()
     config["openai_api_key"] = api_key
     save_config(config)
+    return {"status": "ok"}
+
+
+@app.post("/api/config/hf")
+async def set_hf_token(hf_token: str = Form(...)):
+    config = load_config()
+    config["hf_token"] = hf_token.strip()
+    save_config(config)
+    # Invalidate cached pipeline so the new token is used next time
+    global _diarization_pipeline, _diarization_pipeline_token
+    _diarization_pipeline = None
+    _diarization_pipeline_token = None
     return {"status": "ok"}
 
 
@@ -230,7 +357,8 @@ def _sse(event: str, data: dict) -> str:
 
 
 def _process_audio(input_path: str, original_size: int, client: openai.OpenAI,
-                   language: str, generate_summary: bool, q: queue.Queue):
+                   language: str, generate_summary: bool, diarize: bool,
+                   num_speakers: int | None, hf_token: str, q: queue.Queue):
     compressed_path = None
     chunks = []
     try:
@@ -244,19 +372,45 @@ def _process_audio(input_path: str, original_size: int, client: openai.OpenAI,
         chunks = split_audio(compressed_path)
         num_chunks = len(chunks)
 
-        transcripts = []
         lang = language if language else None
+        transcripts: list[str] = []
+        all_segments: list[dict] = []
+        cumulative_offset = 0.0
         for i, chunk_path in enumerate(chunks):
             q.put(_sse("progress", {
                 "step": "transcribe",
                 "message": f"Trascrizione segmento {i + 1}/{num_chunks}...",
                 "current": i + 1, "total": num_chunks,
             }))
-            text = transcribe_file(client, chunk_path, lang)
-            transcripts.append(text)
+            if diarize:
+                result = transcribe_file(client, chunk_path, lang, want_segments=True)
+                transcripts.append(result["text"])
+                for seg in result["segments"]:
+                    all_segments.append({
+                        "start": seg["start"] + cumulative_offset,
+                        "end": seg["end"] + cumulative_offset,
+                        "text": seg["text"],
+                    })
+                cumulative_offset += get_audio_duration(chunk_path)
+            else:
+                transcripts.append(transcribe_file(client, chunk_path, lang))
 
-        full_transcript = "\n".join(transcripts)
+        plain_transcript = "\n".join(transcripts)
         whisper_cost = duration_min * 0.006
+
+        # Diarization pass
+        final_transcript = plain_transcript
+        num_detected_speakers = 0
+        if diarize:
+            q.put(_sse("progress", {
+                "step": "diarize",
+                "message": "Identificazione parlanti (può richiedere diversi minuti)...",
+            }))
+            turns = diarize_audio(compressed_path, hf_token, num_speakers=num_speakers)
+            num_detected_speakers = len({t["speaker"] for t in turns})
+            diarized = merge_segments_with_speakers(all_segments, turns)
+            if diarized:
+                final_transcript = diarized
 
         summary = None
         summary_cost = 0.0
@@ -264,22 +418,26 @@ def _process_audio(input_path: str, original_size: int, client: openai.OpenAI,
             q.put(_sse("progress", {"step": "summary", "message": "Generazione riassunto..."}))
             config = load_config()
             summary_model = config.get("summary_model", "gpt-4o-mini")
+            system_prompt = (
+                "Sei un assistente che crea riassunti strutturati di trascrizioni di riunioni. "
+                "Il riassunto deve essere in italiano e includere:\n"
+                "1. **Punti chiave discussi**\n"
+                "2. **Decisioni prese**\n"
+                "3. **Azioni da intraprendere** (con responsabili se menzionati)\n"
+                "4. **Prossimi passi**\n\n"
+                "Il formato deve essere utile per generare un PRD (Product Requirements Document)."
+            )
+            if diarize and num_detected_speakers > 0:
+                system_prompt += (
+                    "\n\nLa trascrizione include le etichette dei parlanti "
+                    "(es. 'Persona 1:', 'Persona 2:'). Usa queste etichette per attribuire "
+                    "opinioni, decisioni e azioni a chi le ha espresse."
+                )
             resp = client.chat.completions.create(
                 model=summary_model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Sei un assistente che crea riassunti strutturati di trascrizioni di riunioni. "
-                            "Il riassunto deve essere in italiano e includere:\n"
-                            "1. **Punti chiave discussi**\n"
-                            "2. **Decisioni prese**\n"
-                            "3. **Azioni da intraprendere** (con responsabili se menzionati)\n"
-                            "4. **Prossimi passi**\n\n"
-                            "Il formato deve essere utile per generare un PRD (Product Requirements Document)."
-                        )
-                    },
-                    {"role": "user", "content": f"Ecco la trascrizione della riunione:\n\n{full_transcript}"}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Ecco la trascrizione della riunione:\n\n{final_transcript}"}
                 ],
             )
             summary = resp.choices[0].message.content
@@ -289,8 +447,10 @@ def _process_audio(input_path: str, original_size: int, client: openai.OpenAI,
         total_cost = whisper_cost + summary_cost
 
         q.put(_sse("result", {
-            "transcript": full_transcript,
+            "transcript": final_transcript,
             "summary": summary,
+            "diarized": diarize,
+            "num_speakers": num_detected_speakers,
             "stats": {
                 "original_size_mb": round(original_size / (1024 * 1024), 2),
                 "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
@@ -324,8 +484,19 @@ async def transcribe(
     language: str = Form(default=""),
     generate_summary: bool = Form(default=False),
     file_order: str = Form(default=""),
+    diarize: bool = Form(default=False),
+    num_speakers: int = Form(default=0),
 ):
     client = get_openai_client()
+
+    hf_token = ""
+    if diarize:
+        hf_token = load_config().get("hf_token", "")
+        if not hf_token:
+            raise HTTPException(
+                status_code=400,
+                detail="Token HuggingFace non configurato. Impostalo in Impostazioni per usare l'identificazione parlanti.",
+            )
 
     # Save all files
     saved_files = []
@@ -366,7 +537,8 @@ async def transcribe(
     q = queue.Queue()
     thread = threading.Thread(
         target=_process_audio,
-        args=(input_path, total_original_size, client, language, generate_summary, q),
+        args=(input_path, total_original_size, client, language, generate_summary,
+              diarize, num_speakers if num_speakers > 0 else None, hf_token, q),
         daemon=True,
     )
     thread.start()

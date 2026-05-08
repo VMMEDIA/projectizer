@@ -175,6 +175,29 @@
         .api-status.connected { background: var(--success); }
         .api-status.disconnected { background: var(--error); }
 
+        .settings-section { margin-bottom: 16px; }
+        .settings-section:last-child { margin-bottom: 0; }
+        .settings-section .hint {
+            color: var(--text2); font-size: 11px; margin-top: 6px; line-height: 1.5;
+        }
+        .settings-section .hint a { color: var(--accent2); text-decoration: none; }
+        .settings-section .hint a:hover { text-decoration: underline; }
+
+        .num-speakers {
+            width: 48px !important; text-align: center; padding: 6px 8px !important;
+            font-size: 13px !important; flex: 0 0 auto !important;
+        }
+
+        /* Speaker-labelled transcript */
+        .speaker-block { margin-bottom: 14px; }
+        .speaker-block:last-child { margin-bottom: 0; }
+        .speaker-badge {
+            display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+            padding: 3px 10px; border-radius: 999px; color: white; text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .speaker-text { color: var(--text); font-size: 14px; line-height: 1.7; }
+
         @media (max-width: 600px) {
             .container { padding: 20px 12px; }
             .stats { flex-direction: column; }
@@ -197,10 +220,26 @@
         </div>
 
         <div class="settings-panel card" id="settingsPanel">
-            <h2>OpenAI API Key</h2>
-            <div class="input-group">
-                <input type="password" id="apiKeyInput" placeholder="sk-...">
-                <button class="btn btn-sm" onclick="saveApiKey()">Salva</button>
+            <div class="settings-section">
+                <h2>OpenAI API Key <span id="openaiStatus" style="font-size:11px;color:var(--text2);text-transform:none;letter-spacing:0;margin-left:4px"></span></h2>
+                <div class="input-group">
+                    <input type="password" id="apiKeyInput" placeholder="sk-...">
+                    <button class="btn btn-sm" onclick="saveApiKey()">Salva</button>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h2>HuggingFace Token <span id="hfStatus" style="font-size:11px;color:var(--text2);text-transform:none;letter-spacing:0;margin-left:4px"></span></h2>
+                <div class="input-group">
+                    <input type="password" id="hfTokenInput" placeholder="hf_...">
+                    <button class="btn btn-sm" onclick="saveHfToken()">Salva</button>
+                </div>
+                <div class="hint">
+                    Serve solo per "Identifica parlanti". Crea un token su
+                    <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>
+                    e accetta i terms di
+                    <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noopener">pyannote/speaker-diarization-3.1</a>
+                    e <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noopener">pyannote/segmentation-3.0</a>.
+                </div>
             </div>
         </div>
 
@@ -242,6 +281,14 @@
                     <label for="summaryToggle">Genera riassunto</label>
                 </div>
                 <div class="option-item">
+                    <input type="checkbox" id="diarizeToggle" onchange="toggleDiarize()">
+                    <label for="diarizeToggle">Identifica parlanti</label>
+                </div>
+                <div class="option-item" id="speakersCountWrap" style="display:none">
+                    <label for="numSpeakersInput">Parlanti:</label>
+                    <input type="number" class="num-speakers" id="numSpeakersInput" min="0" max="20" value="0" placeholder="auto">
+                </div>
+                <div class="option-item">
                     <label for="langSelect">Lingua:</label>
                     <select id="langSelect">
                         <option value="">Auto-detect</option>
@@ -252,6 +299,10 @@
                         <option value="de">Deutsch</option>
                     </select>
                 </div>
+            </div>
+            <div id="diarizeWarning" style="display:none;margin-top:10px;font-size:12px;color:var(--text2)">
+                Il processing locale della diarization richiede tempo extra (≈ 0.3–0.5x realtime su Mac M-series).
+                Al primo utilizzo scarica ~1GB di modelli.
             </div>
             <div style="margin-top: 16px;">
                 <button class="btn" id="transcribeBtn" onclick="transcribe()" disabled>Trascrivi</button>
@@ -450,12 +501,18 @@
             document.getElementById('settingsPanel').classList.toggle('open');
         }
 
+        let hasHfToken = false;
+
         async function checkApiKey() {
             const resp = await fetch('/api/config');
             const data = await resp.json();
             const dot = document.getElementById('apiStatus');
             dot.className = 'api-status ' + (data.has_api_key ? 'connected' : 'disconnected');
             if (!data.has_api_key) document.getElementById('settingsPanel').classList.add('open');
+
+            document.getElementById('openaiStatus').textContent = data.has_api_key ? '· salvato' : '· non configurato';
+            hasHfToken = !!data.has_hf_token;
+            document.getElementById('hfStatus').textContent = hasHfToken ? '· salvato' : '· non configurato';
         }
 
         async function saveApiKey() {
@@ -466,7 +523,25 @@
             await fetch('/api/config', { method: 'POST', body: form });
             document.getElementById('apiKeyInput').value = '';
             checkApiKey();
-            document.getElementById('settingsPanel').classList.remove('open');
+        }
+
+        async function saveHfToken() {
+            const key = document.getElementById('hfTokenInput').value.trim();
+            if (!key) return;
+            const form = new FormData();
+            form.append('hf_token', key);
+            await fetch('/api/config/hf', { method: 'POST', body: form });
+            document.getElementById('hfTokenInput').value = '';
+            checkApiKey();
+        }
+
+        function toggleDiarize() {
+            const on = document.getElementById('diarizeToggle').checked;
+            document.getElementById('speakersCountWrap').style.display = on ? '' : 'none';
+            document.getElementById('diarizeWarning').style.display = on ? '' : 'none';
+            if (on && !hasHfToken) {
+                document.getElementById('settingsPanel').classList.add('open');
+            }
         }
 
         async function transcribe() {
@@ -496,9 +571,12 @@
             for (const f of orderedFiles) form.append('files', f);
             form.append('language', document.getElementById('langSelect').value);
             form.append('generate_summary', document.getElementById('summaryToggle').checked);
+            form.append('diarize', document.getElementById('diarizeToggle').checked);
+            const numSpk = parseInt(document.getElementById('numSpeakersInput').value, 10);
+            form.append('num_speakers', isNaN(numSpk) ? 0 : numSpk);
             if (fileOrder.length) form.append('file_order', fileOrder.join(','));
 
-            const stepProgress = { compress: 15, split: 25, transcribe: 40, summary: 80 };
+            const stepProgress = { compress: 10, split: 20, transcribe: 35, diarize: 75, summary: 90 };
 
             try {
                 const resp = await fetch('/api/transcribe', { method: 'POST', body: form });
@@ -534,7 +612,7 @@
                             progressStatus.textContent = d.message;
                             let pct = stepProgress[d.step] || 50;
                             if (d.step === 'transcribe' && d.total > 1) {
-                                pct = 25 + (d.current / d.total) * 50;
+                                pct = 20 + (d.current / d.total) * 40;
                             }
                             progressBar.style.width = pct + '%';
                         } else if (eventType === 'result') {
@@ -576,7 +654,7 @@
                 document.getElementById('statCostSummaryWrap').style.display = 'none';
             }
 
-            document.getElementById('transcriptBox').textContent = data.transcript;
+            renderTranscript(data.transcript, data.diarized);
 
             const summarySection = document.getElementById('summarySection');
             if (data.summary) {
@@ -587,6 +665,41 @@
             }
 
             document.getElementById('resultsSection').classList.add('visible');
+        }
+
+        const SPEAKER_COLORS = ['#6c5ce7', '#00b894', '#fdcb6e', '#e17055', '#74b9ff', '#fd79a8', '#55efc4', '#ffeaa7'];
+
+        function renderTranscript(text, diarized) {
+            const box = document.getElementById('transcriptBox');
+            box.innerHTML = '';
+            if (!diarized) {
+                box.textContent = text;
+                return;
+            }
+            const blocks = text.split(/\n\n+/);
+            for (const block of blocks) {
+                const m = block.match(/^(Persona (\d+)|Sconosciuto):\s*([\s\S]*)$/);
+                const wrap = document.createElement('div');
+                wrap.className = 'speaker-block';
+                if (!m) {
+                    wrap.textContent = block;
+                    box.appendChild(wrap);
+                    continue;
+                }
+                const label = m[1];
+                const num = m[2] ? parseInt(m[2], 10) - 1 : -1;
+                const body = m[3];
+                const badge = document.createElement('span');
+                badge.className = 'speaker-badge';
+                badge.textContent = label;
+                badge.style.background = num >= 0 ? SPEAKER_COLORS[num % SPEAKER_COLORS.length] : '#555';
+                const textEl = document.createElement('div');
+                textEl.className = 'speaker-text';
+                textEl.textContent = body;
+                wrap.appendChild(badge);
+                wrap.appendChild(textEl);
+                box.appendChild(wrap);
+            }
         }
 
         function markdownToHtml(md) {
