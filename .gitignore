@@ -10,3 +10,4 @@ __pycache__/
 # placeholder so the directory is preserved in git.
 Projectizer.app/Contents/Resources/*
 !Projectizer.app/Contents/Resources/.gitkeep
+!Projectizer.app/Contents/Resources/icon.icns
