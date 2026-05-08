@@ -1,5 +1,7 @@
 import os
 import json
+import re
+import uuid
 import subprocess
 import tempfile
 import math
@@ -7,11 +9,9 @@ import shutil
 import asyncio
 import queue
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-
-# Let MPS fall back to CPU for ops pyannote needs that aren't implemented on Metal
-os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -23,11 +23,18 @@ app = FastAPI(title="Projectizer")
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 CONFIG_FILE = Path("config.json")
+SESSIONS_DIR = Path("sessions")
+SESSIONS_DIR.mkdir(exist_ok=True)
 
 MAX_WHISPER_SIZE = 25 * 1024 * 1024  # 25MB
+_SESSION_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 
-_diarization_pipeline = None
-_diarization_pipeline_token = None
+# Pricing (USD). Whisper is duration-billed; diarize is token-billed but
+# we keep a per-minute estimate for the cost preview UI. Real cost is
+# computed from response.usage at the end of each transcription.
+RATE_WHISPER_PER_MIN = 0.006
+RATE_DIARIZE_PER_MIN = 0.025  # approximate, calibrated from observed usage
+DIARIZE_MODEL = "gpt-4o-transcribe-diarize"
 
 
 def load_config() -> dict:
@@ -38,6 +45,44 @@ def load_config() -> dict:
 
 def save_config(config: dict):
     CONFIG_FILE.write_text(json.dumps(config, indent=2))
+
+
+# ───── Session storage ──────────────────────────────────────────────────
+
+def _session_path(session_id: str) -> Path:
+    if not _SESSION_ID_RE.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id")
+    return SESSIONS_DIR / f"{session_id}.json"
+
+
+def save_session(file_names: list[str], transcript: str, summary: Optional[str],
+                 stats: dict, language: str, diarized: bool) -> dict:
+    """Persist a transcription session to disk and return the saved record."""
+    SESSIONS_DIR.mkdir(exist_ok=True)
+    session_id = uuid.uuid4().hex[:12]
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    if file_names:
+        first_stem = Path(file_names[0]).stem
+        title = f"{first_stem} — {now[:10]}"
+    else:
+        title = f"Sessione {now[:16].replace('T', ' ')}"
+
+    session = {
+        "id": session_id,
+        "title": title,
+        "created_at": now,
+        "files": file_names,
+        "transcript": transcript,
+        "summary": summary,
+        "stats": stats,
+        "language": language or "auto",
+        "diarized": bool(diarized),
+    }
+    (SESSIONS_DIR / f"{session_id}.json").write_text(
+        json.dumps(session, ensure_ascii=False, indent=2)
+    )
+    return session
 
 
 def get_openai_client() -> openai.OpenAI:
@@ -142,102 +187,80 @@ def transcribe_file(
     client: openai.OpenAI,
     file_path: str,
     language: str | None = None,
-    want_segments: bool = False,
+    diarize: bool = False,
 ):
-    """Transcribe a single file. Returns str, or dict with 'text' + 'segments' when want_segments=True."""
+    """Transcribe a single file.
+
+    When ``diarize`` is False, calls ``whisper-1`` and returns a dict with
+    ``text``, empty ``segments``, and no ``usage`` info.
+
+    When ``diarize`` is True, calls ``gpt-4o-transcribe-diarize``. Each segment
+    in the response carries a ``speaker`` label (``"A"``, ``"B"``, …) that we
+    forward to the merger so the UI gets ``Persona 1 / Persona 2`` blocks.
+    """
     with open(file_path, "rb") as f:
-        kwargs = {"model": "whisper-1", "file": f}
-        if language:
-            kwargs["language"] = language
-        if want_segments:
-            kwargs["response_format"] = "verbose_json"
+        if diarize:
+            kwargs = {"model": DIARIZE_MODEL, "file": f}
+            if language:
+                kwargs["language"] = language
             resp = client.audio.transcriptions.create(**kwargs)
             segments = [
-                {"start": float(s.start), "end": float(s.end), "text": s.text.strip()}
+                {
+                    "start": float(s.start),
+                    "end": float(s.end),
+                    "text": (s.text or "").strip(),
+                    "speaker": s.speaker,
+                }
                 for s in (resp.segments or [])
             ]
-            return {"text": resp.text, "segments": segments}
-        kwargs["response_format"] = "text"
-        return client.audio.transcriptions.create(**kwargs)
+            usage = None
+            u = getattr(resp, "usage", None)
+            if u is not None:
+                u_type = getattr(u, "type", None)
+                if u_type == "tokens":
+                    usage = {
+                        "type": "tokens",
+                        "input_tokens": getattr(u, "input_tokens", 0),
+                        "output_tokens": getattr(u, "output_tokens", 0),
+                    }
+                elif u_type == "duration":
+                    usage = {"type": "duration", "seconds": getattr(u, "seconds", 0.0)}
+            return {
+                "text": resp.text,
+                "segments": segments,
+                "duration": float(getattr(resp, "duration", 0.0) or 0.0),
+                "usage": usage,
+            }
+
+        kwargs = {"model": "whisper-1", "file": f, "response_format": "text"}
+        if language:
+            kwargs["language"] = language
+        text = client.audio.transcriptions.create(**kwargs)
+        return {"text": str(text), "segments": [], "duration": 0.0, "usage": None}
 
 
-def get_diarization_pipeline(hf_token: str):
-    """Load pyannote pipeline (lazy, cached). Returns the pipeline object."""
-    global _diarization_pipeline, _diarization_pipeline_token
-    if _diarization_pipeline is not None and _diarization_pipeline_token == hf_token:
-        return _diarization_pipeline
+def merge_diarized_segments(segments: list[dict]) -> tuple[str, int]:
+    """Group consecutive same-speaker segments into ``Persona N: …`` blocks.
 
-    import torch
-    from pyannote.audio import Pipeline
+    The diarize model emits speakers as ``"A"``, ``"B"``, … (or ``known_speaker_names``
+    if provided). We remap them to ``Persona 1``, ``Persona 2``, … in order of
+    first appearance so the UI renders consistently.
 
-    pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
-        use_auth_token=hf_token,
-    )
-    if pipeline is None:
-        raise RuntimeError(
-            "Impossibile caricare il modello di diarization. "
-            "Verifica che il token HuggingFace sia valido e di aver accettato i terms per "
-            "pyannote/speaker-diarization-3.1 e pyannote/segmentation-3.0 su huggingface.co."
-        )
-
-    if torch.backends.mps.is_available():
-        try:
-            pipeline.to(torch.device("mps"))
-        except Exception:
-            pipeline.to(torch.device("cpu"))
-    else:
-        pipeline.to(torch.device("cpu"))
-
-    _diarization_pipeline = pipeline
-    _diarization_pipeline_token = hf_token
-    return pipeline
-
-
-def diarize_audio(file_path: str, hf_token: str, num_speakers: int | None = None) -> list[dict]:
-    """Return list of {start, end, speaker} segments. Speaker is 'SPEAKER_00', 'SPEAKER_01', etc."""
-    pipeline = get_diarization_pipeline(hf_token)
-    kwargs = {}
-    if num_speakers and num_speakers > 0:
-        kwargs["num_speakers"] = int(num_speakers)
-    diarization = pipeline(file_path, **kwargs)
-    turns = []
-    for turn, _, speaker in diarization.itertracks(yield_label=True):
-        turns.append({"start": float(turn.start), "end": float(turn.end), "speaker": speaker})
-    return turns
-
-
-def _assign_speaker(seg_start: float, seg_end: float, turns: list[dict]) -> str | None:
-    """Return speaker label with max temporal overlap for this segment."""
-    best_speaker = None
-    best_overlap = 0.0
-    for t in turns:
-        overlap = max(0.0, min(seg_end, t["end"]) - max(seg_start, t["start"]))
-        if overlap > best_overlap:
-            best_overlap = overlap
-            best_speaker = t["speaker"]
-    return best_speaker
-
-
-def merge_segments_with_speakers(segments: list[dict], turns: list[dict]) -> str:
-    """Assign a speaker to each whisper segment, then group consecutive same-speaker segments.
-    Returns a formatted transcript with 'Persona N: ...' blocks.
+    Returns ``(formatted_text, num_unique_speakers)``.
     """
     if not segments:
-        return ""
+        return "", 0
 
-    # Build stable speaker -> Persona N mapping in order of first appearance
     speaker_map: dict[str, int] = {}
-    labeled = []
-    for seg in segments:
-        spk = _assign_speaker(seg["start"], seg["end"], turns)
-        if spk is not None and spk not in speaker_map:
-            speaker_map[spk] = len(speaker_map) + 1
-        labeled.append((spk, seg["text"]))
+    blocks: list[tuple[Optional[int], list[str]]] = []
 
-    # Group consecutive segments by speaker
-    blocks: list[tuple[int | None, list[str]]] = []
-    for spk, text in labeled:
+    for seg in segments:
+        spk = seg.get("speaker")
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        if spk and spk not in speaker_map:
+            speaker_map[spk] = len(speaker_map) + 1
         persona_num = speaker_map.get(spk) if spk else None
         if blocks and blocks[-1][0] == persona_num:
             blocks[-1][1].append(text)
@@ -246,12 +269,28 @@ def merge_segments_with_speakers(segments: list[dict], turns: list[dict]) -> str
 
     lines = []
     for persona_num, texts in blocks:
-        body = " ".join(t for t in texts if t).strip()
+        body = " ".join(texts).strip()
         if not body:
             continue
         label = f"Persona {persona_num}" if persona_num else "Sconosciuto"
         lines.append(f"{label}: {body}")
-    return "\n\n".join(lines)
+    return "\n\n".join(lines), len(speaker_map)
+
+
+def diarize_cost_from_usage(usage: Optional[dict], duration_min: float) -> float:
+    """Compute USD cost from the response.usage of gpt-4o-transcribe-diarize.
+
+    Falls back to a duration-based estimate when usage is missing.
+    """
+    if not usage:
+        return duration_min * RATE_DIARIZE_PER_MIN
+    if usage.get("type") == "tokens":
+        return (
+            usage.get("input_tokens", 0) * (2.50 / 1_000_000)
+            + usage.get("output_tokens", 0) * (10.00 / 1_000_000)
+        )
+    # Duration-billed: assume same per-minute rate as our estimate
+    return (usage.get("seconds", 0.0) / 60.0) * RATE_DIARIZE_PER_MIN
 
 
 def save_upload(upload_file_content: bytes, suffix: str) -> str:
@@ -272,10 +311,7 @@ async def index():
 @app.get("/api/config")
 async def get_config():
     config = load_config()
-    return {
-        "has_api_key": bool(config.get("openai_api_key")),
-        "has_hf_token": bool(config.get("hf_token")),
-    }
+    return {"has_api_key": bool(config.get("openai_api_key"))}
 
 
 @app.post("/api/config")
@@ -283,18 +319,6 @@ async def set_config(api_key: str = Form(...)):
     config = load_config()
     config["openai_api_key"] = api_key
     save_config(config)
-    return {"status": "ok"}
-
-
-@app.post("/api/config/hf")
-async def set_hf_token(hf_token: str = Form(...)):
-    config = load_config()
-    config["hf_token"] = hf_token.strip()
-    save_config(config)
-    # Invalidate cached pipeline so the new token is used next time
-    global _diarization_pipeline, _diarization_pipeline_token
-    _diarization_pipeline = None
-    _diarization_pipeline_token = None
     return {"status": "ok"}
 
 
@@ -328,7 +352,8 @@ async def estimate(files: list[UploadFile] = File(...)):
 
         total_duration_min = sum(fi["duration_sec"] for fi in file_infos) / 60.0
         total_size_mb = sum(fi["size_mb"] for fi in file_infos)
-        whisper_cost = total_duration_min * 0.006
+        whisper_cost = total_duration_min * RATE_WHISPER_PER_MIN
+        diarize_cost_est = total_duration_min * RATE_DIARIZE_PER_MIN
         summary_cost_est = (total_duration_min * 750 * 0.15 + 500 * 0.60) / 1_000_000
 
         return {
@@ -341,8 +366,10 @@ async def estimate(files: list[UploadFile] = File(...)):
             "total_duration_min": round(total_duration_min, 1),
             "total_size_mb": round(total_size_mb, 2),
             "cost_whisper": round(whisper_cost, 4),
+            "cost_diarize_est": round(diarize_cost_est, 4),
             "cost_summary_est": round(summary_cost_est, 4),
             "cost_total_est": round(whisper_cost + summary_cost_est, 4),
+            "cost_total_diarize_est": round(diarize_cost_est + summary_cost_est, 4),
         }
     finally:
         for p in saved:
@@ -358,7 +385,7 @@ def _sse(event: str, data: dict) -> str:
 
 def _process_audio(input_path: str, original_size: int, client: openai.OpenAI,
                    language: str, generate_summary: bool, diarize: bool,
-                   num_speakers: int | None, hf_token: str, q: queue.Queue):
+                   file_names: list[str], q: queue.Queue):
     compressed_path = None
     chunks = []
     try:
@@ -376,41 +403,49 @@ def _process_audio(input_path: str, original_size: int, client: openai.OpenAI,
         transcripts: list[str] = []
         all_segments: list[dict] = []
         cumulative_offset = 0.0
+        whisper_cost = 0.0
         for i, chunk_path in enumerate(chunks):
+            chunk_label = "Trascrizione + parlanti" if diarize else "Trascrizione"
             q.put(_sse("progress", {
                 "step": "transcribe",
-                "message": f"Trascrizione segmento {i + 1}/{num_chunks}...",
+                "message": f"{chunk_label} segmento {i + 1}/{num_chunks}...",
                 "current": i + 1, "total": num_chunks,
             }))
+            result = transcribe_file(client, chunk_path, lang, diarize=diarize)
+            transcripts.append(result["text"])
+
             if diarize:
-                result = transcribe_file(client, chunk_path, lang, want_segments=True)
-                transcripts.append(result["text"])
+                # gpt-4o-transcribe-diarize emits its own duration; fall back to ffprobe.
+                chunk_dur = result.get("duration") or get_audio_duration(chunk_path)
+                # Tag every segment with the cumulative offset so the timeline
+                # is continuous across chunks. Speaker labels reset per chunk —
+                # OpenAI doesn't expose cross-chunk speaker matching yet, so
+                # for files split into multiple chunks the same person may end
+                # up tagged differently in each chunk. Single-chunk files (the
+                # common case for meetings under ~1.5h compressed) are fine.
                 for seg in result["segments"]:
                     all_segments.append({
                         "start": seg["start"] + cumulative_offset,
                         "end": seg["end"] + cumulative_offset,
                         "text": seg["text"],
+                        "speaker": seg.get("speaker"),
                     })
-                cumulative_offset += get_audio_duration(chunk_path)
+                cumulative_offset += chunk_dur
+                whisper_cost += diarize_cost_from_usage(result.get("usage"),
+                                                       (chunk_dur or 0.0) / 60.0)
             else:
-                transcripts.append(transcribe_file(client, chunk_path, lang))
+                whisper_cost += (get_audio_duration(chunk_path) / 60.0) * RATE_WHISPER_PER_MIN
 
         plain_transcript = "\n".join(transcripts)
-        whisper_cost = duration_min * 0.006
 
-        # Diarization pass
+        # Build the final transcript. With diarize=True the model already
+        # gives us speaker-tagged segments — we just regroup into Persona blocks.
         final_transcript = plain_transcript
         num_detected_speakers = 0
         if diarize:
-            q.put(_sse("progress", {
-                "step": "diarize",
-                "message": "Identificazione parlanti (può richiedere diversi minuti)...",
-            }))
-            turns = diarize_audio(compressed_path, hf_token, num_speakers=num_speakers)
-            num_detected_speakers = len({t["speaker"] for t in turns})
-            diarized = merge_segments_with_speakers(all_segments, turns)
-            if diarized:
-                final_transcript = diarized
+            diarized_text, num_detected_speakers = merge_diarized_segments(all_segments)
+            if diarized_text:
+                final_transcript = diarized_text
 
         summary = None
         summary_cost = 0.0
@@ -446,21 +481,42 @@ def _process_audio(input_path: str, original_size: int, client: openai.OpenAI,
 
         total_cost = whisper_cost + summary_cost
 
+        stats = {
+            "original_size_mb": round(original_size / (1024 * 1024), 2),
+            "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
+            "compression_ratio": round((1 - compressed_size / original_size) * 100, 1) if original_size > 0 else 0,
+            "chunks": num_chunks,
+            "duration_min": round(duration_min, 1),
+            "cost_whisper": round(whisper_cost, 4),
+            "cost_summary": round(summary_cost, 4),
+            "cost_total": round(total_cost, 4),
+        }
+
+        # Persist the session so it shows up in the History tab.
+        saved = None
+        try:
+            saved = save_session(
+                file_names=file_names,
+                transcript=final_transcript,
+                summary=summary,
+                stats=stats,
+                language=language,
+                diarized=bool(diarize),
+            )
+        except Exception:
+            pass  # never block the result on a save error
+
         q.put(_sse("result", {
             "transcript": final_transcript,
             "summary": summary,
             "diarized": diarize,
             "num_speakers": num_detected_speakers,
-            "stats": {
-                "original_size_mb": round(original_size / (1024 * 1024), 2),
-                "compressed_size_mb": round(compressed_size / (1024 * 1024), 2),
-                "compression_ratio": round((1 - compressed_size / original_size) * 100, 1) if original_size > 0 else 0,
-                "chunks": num_chunks,
-                "duration_min": round(duration_min, 1),
-                "cost_whisper": round(whisper_cost, 4),
-                "cost_summary": round(summary_cost, 4),
-                "cost_total": round(total_cost, 4),
-            }
+            "stats": stats,
+            "session": {
+                "id": saved["id"] if saved else None,
+                "title": saved["title"] if saved else None,
+                "created_at": saved["created_at"] if saved else None,
+            },
         }))
     except Exception as e:
         q.put(_sse("error", {"message": str(e)}))
@@ -485,18 +541,8 @@ async def transcribe(
     generate_summary: bool = Form(default=False),
     file_order: str = Form(default=""),
     diarize: bool = Form(default=False),
-    num_speakers: int = Form(default=0),
 ):
     client = get_openai_client()
-
-    hf_token = ""
-    if diarize:
-        hf_token = load_config().get("hf_token", "")
-        if not hf_token:
-            raise HTTPException(
-                status_code=400,
-                detail="Token HuggingFace non configurato. Impostalo in Impostazioni per usare l'identificazione parlanti.",
-            )
 
     # Save all files
     saved_files = []
@@ -534,11 +580,13 @@ async def transcribe(
     else:
         input_path = saved_files[0]["path"]
 
+    file_names = [sf["name"] for sf in saved_files]
+
     q = queue.Queue()
     thread = threading.Thread(
         target=_process_audio,
         args=(input_path, total_original_size, client, language, generate_summary,
-              diarize, num_speakers if num_speakers > 0 else None, hf_token, q),
+              diarize, file_names, q),
         daemon=True,
     )
     thread.start()
@@ -556,6 +604,64 @@ async def transcribe(
             yield msg
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ───── Sessions API ─────────────────────────────────────────────────────
+
+@app.get("/api/sessions")
+async def list_sessions():
+    """Return session metadata sorted by creation time (newest first)."""
+    if not SESSIONS_DIR.exists():
+        return []
+    out = []
+    for p in SESSIONS_DIR.glob("*.json"):
+        try:
+            data = json.loads(p.read_text())
+            summary = data.get("summary") or data.get("transcript") or ""
+            preview = summary.strip().replace("\n", " ")[:180]
+            out.append({
+                "id": data.get("id"),
+                "title": data.get("title"),
+                "created_at": data.get("created_at"),
+                "duration_min": data.get("stats", {}).get("duration_min"),
+                "diarized": data.get("diarized", False),
+                "language": data.get("language", ""),
+                "preview": preview,
+            })
+        except Exception:
+            continue
+    out.sort(key=lambda s: s.get("created_at") or "", reverse=True)
+    return out
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    p = _session_path(session_id)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+    return json.loads(p.read_text())
+
+
+@app.patch("/api/sessions/{session_id}")
+async def rename_session(session_id: str, title: str = Form(...)):
+    p = _session_path(session_id)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+    data = json.loads(p.read_text())
+    new_title = title.strip()
+    if new_title:
+        data["title"] = new_title[:200]
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    return {"status": "ok", "title": data["title"]}
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str):
+    p = _session_path(session_id)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+    p.unlink()
+    return {"status": "ok"}
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")

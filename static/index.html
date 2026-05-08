@@ -397,6 +397,81 @@
             align-items: center;
         }
 
+        /* Recording controls */
+        .record-row {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-record {
+            flex: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 9px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border-strong);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .btn-record:hover {
+            background: var(--surface-hover);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        .btn-record svg {
+            width: 14px;
+            height: 14px;
+        }
+        .recording-active {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 14px;
+            border-radius: 8px;
+            background: rgba(255, 59, 48, 0.10);
+            border: 1px solid rgba(255, 59, 48, 0.25);
+        }
+        .recording-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--error);
+            animation: pulse 1.4s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.2); }
+        }
+        .recording-timer {
+            font-variant-numeric: tabular-nums;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--error);
+            flex: 1;
+        }
+        .btn-stop {
+            background: var(--error);
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-stop:hover { opacity: 0.85; }
+
         .api-dot {
             display: inline-block;
             width: 7px;
@@ -586,6 +661,98 @@
         .summary li { margin-bottom: 4px; }
         .summary strong { color: var(--accent); font-weight: 600; }
         .summary p { margin-bottom: 10px; }
+
+        /* History */
+        .history-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text2);
+            font-size: 13px;
+        }
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .history-card {
+            display: block;
+            padding: 14px 16px;
+            border-radius: 10px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .history-card:hover {
+            background: var(--surface-hover);
+            border-color: var(--border-strong);
+        }
+        .history-card.active {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+        }
+        .history-card-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .history-title {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+        }
+        .history-title input {
+            width: 100%;
+            font-size: 14px;
+            font-weight: 600;
+            border: 1px solid var(--accent);
+            border-radius: 5px;
+            padding: 3px 6px;
+            background: var(--main-bg);
+            color: var(--text);
+            outline: none;
+        }
+        .history-card-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .history-card:hover .history-card-actions { opacity: 1; }
+        .history-icon-btn {
+            background: none;
+            border: none;
+            padding: 4px 6px;
+            border-radius: 5px;
+            cursor: pointer;
+            color: var(--text2);
+            font-size: 13px;
+            line-height: 1;
+        }
+        .history-icon-btn:hover { background: var(--surface-active); color: var(--text); }
+        .history-icon-btn.danger:hover { color: var(--error); }
+        .history-meta {
+            margin-top: 4px;
+            font-size: 11.5px;
+            color: var(--text2);
+            font-variant-numeric: tabular-nums;
+        }
+        .history-preview {
+            margin-top: 8px;
+            font-size: 12.5px;
+            color: var(--text2);
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
 
         /* Stats */
         .stats-grid {
@@ -806,6 +973,19 @@
                         <div class="dropzone-hint">MP3 · WAV · M4A · OGG · MP4</div>
                     </div>
                     <input type="file" id="fileInput" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.ogg,.webm,.flac" multiple hidden>
+
+                    <div class="record-row">
+                        <button class="btn-record" id="recordButton" onclick="startRecording()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><rect x="9" y="2" width="6" height="13" rx="3"></rect><path d="M19 10a7 7 0 0 1-14 0"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+                            <span>Registra dal microfono</span>
+                        </button>
+                        <div class="recording-active" id="recordingActive" style="display:none">
+                            <span class="recording-dot"></span>
+                            <span class="recording-timer" id="recordTimer">0:00</span>
+                            <button class="btn-stop" onclick="stopRecording()">Stop</button>
+                        </div>
+                    </div>
+
                     <div class="estimate-banner" id="estimateBox">
                         <div class="est-row">
                             <span class="est-label">Durata</span>
@@ -842,12 +1022,8 @@
                         <input type="checkbox" id="diarizeToggle" onchange="toggleDiarize()">
                         <label for="diarizeToggle">Identifica parlanti</label>
                     </div>
-                    <div class="option-row" id="speakersCountWrap" style="display:none; padding-left: 26px;">
-                        <label for="numSpeakersInput" style="font-size: 12px; color: var(--text2);">N°</label>
-                        <input type="number" class="compact-input num-speakers" id="numSpeakersInput" min="0" max="20" value="0" placeholder="auto">
-                    </div>
                     <div id="diarizeWarning" style="display:none; font-size: 11px; color: var(--text2); margin-top: 6px; padding: 0 4px; line-height: 1.5;">
-                        ~0.3–0.5× realtime su Mac M-series. Primo run: ~1GB di download.
+                        Usa <code style="font-size:10.5px">gpt-4o-transcribe-diarize</code>: costo ~5× rispetto alla trascrizione semplice.
                     </div>
                     <div class="option-row" style="margin-top: 10px;">
                         <label for="langSelect" style="font-size: 12px; color: var(--text2); flex-shrink: 0;">Lingua</label>
@@ -881,6 +1057,9 @@
                 </button>
                 <button class="tab" data-tab="stats" onclick="switchTab('stats')">
                     Stats
+                </button>
+                <button class="tab" data-tab="history" onclick="switchTab('history')">
+                    Storia
                 </button>
                 <span class="tab-spacer"></span>
             </nav>
@@ -953,6 +1132,23 @@
                     </div>
                     <div class="stats-grid" id="statsGrid"></div>
                 </section>
+
+                <!-- History -->
+                <section class="panel" id="panel-history">
+                    <div class="panel-header">
+                        <div class="panel-title">Storia</div>
+                        <div class="panel-actions">
+                            <button class="btn btn-outline" onclick="loadSessions()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                <span>Aggiorna</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="history-list" id="historyList"></div>
+                    <div class="history-empty" id="historyEmpty" style="display:none">
+                        Nessuna trascrizione salvata. Carica un file (o registra) e premi "Trascrivi" — comparirà qui.
+                    </div>
+                </section>
             </div>
         </main>
     </div>
@@ -980,23 +1176,6 @@
                     </div>
                 </div>
 
-                <div class="modal-section">
-                    <h4>
-                        <span>HuggingFace Token</span>
-                        <span class="status-text" id="hfStatus"></span>
-                    </h4>
-                    <div class="input-group">
-                        <input type="password" class="compact-input" id="hfTokenInput" placeholder="hf_…">
-                        <button class="btn btn-sm" onclick="saveHfToken()">Salva</button>
-                    </div>
-                    <div class="modal-hint">
-                        Necessario solo per la diarization (identificare i parlanti). Crea un token su
-                        <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co</a>
-                        e accetta i terms di
-                        <a href="https://huggingface.co/pyannote/speaker-diarization-3.1" target="_blank" rel="noopener">speaker-diarization-3.1</a>
-                        e <a href="https://huggingface.co/pyannote/segmentation-3.0" target="_blank" rel="noopener">segmentation-3.0</a>.
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -1006,9 +1185,10 @@
         let fileOrder = [];
         let resultData = null;
         let activeTab = 'transcript';
-        let hasHfToken = false;
+        let activeSessionId = null;
 
         checkApiKey();
+        loadSessions();
 
         // ─── Drag & drop ─────────────────────────────────────────────
         const dropzone = document.getElementById('dropzone');
@@ -1033,6 +1213,119 @@
             }
             document.getElementById('transcribeBtn').disabled = false;
             fetchEstimate();
+        }
+
+        // ─── Microphone recording ────────────────────────────────────
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let recordingStartTime = 0;
+        let recordingTimerInterval = null;
+        let recordingStream = null;
+
+        function pickMimeType() {
+            const candidates = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/mp4',
+                'audio/ogg;codecs=opus',
+                ''  // browser default
+            ];
+            for (const m of candidates) {
+                if (m === '' || (window.MediaRecorder && MediaRecorder.isTypeSupported(m))) {
+                    return m;
+                }
+            }
+            return '';
+        }
+
+        async function startRecording() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                showError("Il browser non supporta la registrazione audio.");
+                return;
+            }
+            try {
+                recordingStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+                });
+            } catch (err) {
+                if (err.name === 'NotAllowedError') {
+                    showError("Permesso microfono negato. Concedi l'accesso e riprova.");
+                } else {
+                    showError("Impossibile accedere al microfono: " + err.message);
+                }
+                return;
+            }
+
+            const mimeType = pickMimeType();
+            try {
+                mediaRecorder = new MediaRecorder(recordingStream, mimeType ? { mimeType } : {});
+            } catch (err) {
+                stopMicTracks();
+                showError("MediaRecorder non disponibile: " + err.message);
+                return;
+            }
+
+            recordedChunks = [];
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+            };
+            mediaRecorder.onstop = () => {
+                const type = mediaRecorder.mimeType || mimeType || 'audio/webm';
+                const ext = type.includes('mp4') ? 'm4a'
+                          : type.includes('ogg') ? 'ogg'
+                          : 'webm';
+                const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                const fileName = `recording-${stamp}.${ext}`;
+                const blob = new Blob(recordedChunks, { type });
+                const file = new File([blob], fileName, { type, lastModified: Date.now() });
+
+                stopMicTracks();
+                stopRecordingUI();
+                addFiles([file]);
+            };
+            mediaRecorder.start(1000);  // collect data in 1s chunks
+            recordingStartTime = Date.now();
+            startRecordingUI();
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+        }
+
+        function stopMicTracks() {
+            if (recordingStream) {
+                recordingStream.getTracks().forEach(t => t.stop());
+                recordingStream = null;
+            }
+        }
+
+        function startRecordingUI() {
+            document.getElementById('recordButton').style.display = 'none';
+            document.getElementById('recordingActive').style.display = '';
+            recordingTimerInterval = setInterval(() => {
+                const sec = Math.floor((Date.now() - recordingStartTime) / 1000);
+                const m = Math.floor(sec / 60);
+                const s = sec % 60;
+                document.getElementById('recordTimer').textContent =
+                    `${m}:${String(s).padStart(2, '0')}`;
+            }, 250);
+        }
+
+        function stopRecordingUI() {
+            clearInterval(recordingTimerInterval);
+            recordingTimerInterval = null;
+            document.getElementById('recordButton').style.display = '';
+            document.getElementById('recordingActive').style.display = 'none';
+            document.getElementById('recordTimer').textContent = '0:00';
+        }
+
+        function showError(message) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = message;
+            el.classList.add('visible');
+            setTimeout(() => el.classList.remove('visible'), 4500);
         }
 
         function removeFileAt(idx) {
@@ -1106,10 +1399,13 @@
 
                 document.getElementById('estDuration').textContent = formatDuration(est.total_duration_min);
                 const withSummary = document.getElementById('summaryToggle').checked;
-                const totalEst = withSummary ? est.cost_total_est : est.cost_whisper;
+                const withDiarize = document.getElementById('diarizeToggle').checked;
+                const transcriptionCost = withDiarize ? est.cost_diarize_est : est.cost_whisper;
+                const totalEst = transcriptionCost + (withSummary ? est.cost_summary_est : 0);
                 document.getElementById('estCost').textContent = formatCost(totalEst);
 
-                const parts = ['Whisper ' + formatCost(est.cost_whisper)];
+                const parts = [];
+                parts.push((withDiarize ? 'Diarize ' : 'Whisper ') + formatCost(transcriptionCost));
                 if (withSummary) parts.push('Riassunto ~' + formatCost(est.cost_summary_est));
                 document.getElementById('estBreakdown').textContent = parts.join(' · ');
                 document.getElementById('estBreakdownRow').style.display = '';
@@ -1149,11 +1445,7 @@
             const data = await resp.json();
             const dot = document.getElementById('apiStatus');
             dot.className = 'api-dot ' + (data.has_api_key ? 'connected' : 'disconnected');
-
             document.getElementById('openaiStatus').textContent = data.has_api_key ? '✓ salvato' : 'non configurato';
-            hasHfToken = !!data.has_hf_token;
-            document.getElementById('hfStatus').textContent = hasHfToken ? '✓ salvato' : 'non configurato';
-
             if (!data.has_api_key) openSettings();
         }
 
@@ -1167,21 +1459,12 @@
             checkApiKey();
         }
 
-        async function saveHfToken() {
-            const key = document.getElementById('hfTokenInput').value.trim();
-            if (!key) return;
-            const form = new FormData();
-            form.append('hf_token', key);
-            await fetch('/api/config/hf', { method: 'POST', body: form });
-            document.getElementById('hfTokenInput').value = '';
-            checkApiKey();
-        }
-
         function toggleDiarize() {
             const on = document.getElementById('diarizeToggle').checked;
-            document.getElementById('speakersCountWrap').style.display = on ? '' : 'none';
             document.getElementById('diarizeWarning').style.display = on ? '' : 'none';
-            if (on && !hasHfToken) openSettings();
+            // Refresh the cost preview if we have files selected — diarize
+            // mode uses gpt-4o-transcribe-diarize which costs more per minute.
+            if (selectedFiles.length) fetchEstimate();
         }
 
         // ─── Tabs ────────────────────────────────────────────────────
@@ -1189,6 +1472,158 @@
             activeTab = name;
             document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
             document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+            // Storia tab is always available even before a transcription, so it's
+            // visible by default. The other panels keep their display:none until
+            // we have results to show.
+            if (name === 'history') {
+                loadSessions();
+                document.getElementById('emptyState').style.display = 'none';
+            } else if (!resultData) {
+                document.getElementById('emptyState').style.display = '';
+            }
+        }
+
+        // ─── History (sessions) ───────────────────────────────────────
+        async function loadSessions() {
+            const listEl = document.getElementById('historyList');
+            const emptyEl = document.getElementById('historyEmpty');
+            try {
+                const resp = await fetch('/api/sessions');
+                const sessions = await resp.json();
+                listEl.innerHTML = '';
+                if (!sessions.length) {
+                    emptyEl.style.display = '';
+                    return;
+                }
+                emptyEl.style.display = 'none';
+                for (const s of sessions) {
+                    listEl.appendChild(renderSessionCard(s));
+                }
+            } catch (e) {
+                listEl.innerHTML = '';
+                emptyEl.textContent = 'Impossibile caricare lo storico: ' + e.message;
+                emptyEl.style.display = '';
+            }
+        }
+
+        function renderSessionCard(s) {
+            const card = document.createElement('div');
+            card.className = 'history-card' + (s.id === activeSessionId ? ' active' : '');
+            card.dataset.id = s.id;
+
+            const dateStr = formatSessionDate(s.created_at);
+            const dur = s.duration_min ? formatDuration(s.duration_min) : '';
+            const lang = s.language && s.language !== 'auto' ? s.language : '';
+            const meta = [dateStr, dur, lang, s.diarized ? 'parlanti' : ''].filter(Boolean).join(' · ');
+
+            card.innerHTML = `
+                <div class="history-card-row">
+                    <div class="history-title" data-id="${s.id}">${escapeHtml(s.title || '(senza titolo)')}</div>
+                    <div class="history-card-actions">
+                        <button class="history-icon-btn" title="Rinomina" onclick="renameSession(event, '${s.id}')">✎</button>
+                        <button class="history-icon-btn danger" title="Elimina" onclick="deleteSession(event, '${s.id}')">✕</button>
+                    </div>
+                </div>
+                <div class="history-meta">${escapeHtml(meta)}</div>
+                ${s.preview ? `<div class="history-preview">${escapeHtml(s.preview)}</div>` : ''}
+            `;
+            card.addEventListener('click', e => {
+                // Ignore clicks on action buttons or while editing the title inline
+                if (e.target.closest('.history-card-actions')) return;
+                if (e.target.tagName === 'INPUT') return;
+                openSession(s.id);
+            });
+            return card;
+        }
+
+        function formatSessionDate(iso) {
+            if (!iso) return '';
+            try {
+                const d = new Date(iso);
+                const today = new Date();
+                const sameDay = d.toDateString() === today.toDateString();
+                const opts = sameDay
+                    ? { hour: '2-digit', minute: '2-digit' }
+                    : { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+                return d.toLocaleString(undefined, opts);
+            } catch {
+                return iso;
+            }
+        }
+
+        async function openSession(id) {
+            try {
+                const resp = await fetch('/api/sessions/' + id);
+                if (!resp.ok) throw new Error('Sessione non trovata');
+                const data = await resp.json();
+                resultData = {
+                    transcript: data.transcript,
+                    summary: data.summary,
+                    diarized: data.diarized,
+                    stats: data.stats,
+                };
+                activeSessionId = id;
+                showResults(resultData);
+                // showResults switches to 'transcript' tab; the user came from
+                // 'history', so this gives them the content they clicked on.
+                document.querySelectorAll('.history-card').forEach(c => {
+                    c.classList.toggle('active', c.dataset.id === id);
+                });
+            } catch (e) {
+                showError(e.message);
+            }
+        }
+
+        async function renameSession(e, id) {
+            e.stopPropagation();
+            const titleEl = document.querySelector(`.history-title[data-id="${id}"]`);
+            if (!titleEl) return;
+            const oldTitle = titleEl.textContent;
+
+            const input = document.createElement('input');
+            input.value = oldTitle;
+            titleEl.innerHTML = '';
+            titleEl.appendChild(input);
+            input.focus();
+            input.select();
+
+            const commit = async () => {
+                const newTitle = input.value.trim();
+                if (!newTitle || newTitle === oldTitle) {
+                    titleEl.textContent = oldTitle;
+                    return;
+                }
+                try {
+                    const form = new FormData();
+                    form.append('title', newTitle);
+                    const resp = await fetch('/api/sessions/' + id, { method: 'PATCH', body: form });
+                    const out = await resp.json();
+                    titleEl.textContent = out.title || newTitle;
+                } catch (err) {
+                    titleEl.textContent = oldTitle;
+                    showError('Rinomina fallita: ' + err.message);
+                }
+            };
+            const cancel = () => { titleEl.textContent = oldTitle; };
+
+            input.addEventListener('blur', commit);
+            input.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+                else if (ev.key === 'Escape') { input.removeEventListener('blur', commit); cancel(); }
+            });
+        }
+
+        async function deleteSession(e, id) {
+            e.stopPropagation();
+            if (!confirm("Eliminare questa trascrizione? L'azione è definitiva.")) return;
+            try {
+                const resp = await fetch('/api/sessions/' + id, { method: 'DELETE' });
+                if (!resp.ok) throw new Error('Server: ' + resp.status);
+                if (id === activeSessionId) activeSessionId = null;
+                loadSessions();
+            } catch (err) {
+                showError('Eliminazione fallita: ' + err.message);
+            }
         }
 
         // ─── Transcribe ──────────────────────────────────────────────
@@ -1228,8 +1663,6 @@
             form.append('language', document.getElementById('langSelect').value);
             form.append('generate_summary', document.getElementById('summaryToggle').checked);
             form.append('diarize', document.getElementById('diarizeToggle').checked);
-            const numSpk = parseInt(document.getElementById('numSpeakersInput').value, 10);
-            form.append('num_speakers', isNaN(numSpk) ? 0 : numSpk);
             if (fileOrder.length) form.append('file_order', fileOrder.join(','));
 
             const stepProgress = { compress: 12, split: 22, transcribe: 38, diarize: 75, summary: 90 };
@@ -1272,11 +1705,13 @@
                             setPct(pct);
                         } else if (eventType === 'result') {
                             resultData = JSON.parse(eventData);
+                            activeSessionId = resultData.session?.id || null;
                             setPct(100);
                             progressStatus.textContent = 'Completato!';
                             setTimeout(() => {
                                 progressSection.classList.remove('visible');
                                 showResults(resultData);
+                                loadSessions();  // refresh History tab in background
                             }, 350);
                         } else if (eventType === 'error') {
                             const d = JSON.parse(eventData);

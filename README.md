@@ -37,7 +37,7 @@ Projectizer takes a different approach:
 | **Customization** | None | Open source — tweak prompts, models, everything |
 | **Offline access** | Requires their app | Local web UI, works on any browser |
 | **Summary quality** | Fixed AI model | Choose any OpenAI model (GPT-4o, 4o-mini, o1...) |
-| **Speaker labels** | Limited | Built-in diarization (pyannote.audio) |
+| **Speaker labels** | Limited | Built-in diarization via OpenAI |
 
 <br>
 
@@ -49,7 +49,7 @@ Projectizer takes a different approach:
 
 **Transcription** — Whisper-powered, supports 50+ languages with auto-detection. Upload one file or ten — Projectizer concatenates, compresses, and chunks them automatically.
 
-**Speaker Diarization (optional)** — Identify who said what using `pyannote.audio`. Get transcripts labeled `Persona 1: ...`, `Persona 2: ...` instead of a single wall of text. *Requires a free HuggingFace token — see [step 4 below](#4-speaker-diarization-setup-optional).*
+**Speaker Diarization (optional)** — Identify who said what via OpenAI's `gpt-4o-transcribe-diarize`. Get transcripts labeled `Persona 1: …`, `Persona 2: …` instead of a wall of text. Toggle on in the UI — no extra service, no extra dependency.
 
 **Structured Summaries** — Not a wall of text. Every summary is organized into key discussion points, decisions made, action items with owners, and next steps. Built for product teams.
 
@@ -71,7 +71,7 @@ The script syncs source files into `Projectizer.app/Contents/Resources/`, create
 
 Paste your OpenAI API key in the **Settings** panel and you're ready to go.
 
-> **First run takes 3–5 minutes** — PyTorch and pyannote.audio are large dependencies (~1 GB on disk). Subsequent runs start in seconds.
+> **First run takes ~30 seconds** — the bundle ships with a slim Python stack (~75 MB). Subsequent runs start instantly.
 
 ### Two ways to run
 
@@ -105,7 +105,7 @@ python3 --version
 | **Fedora / RHEL** | `sudo dnf install python3.11` |
 | **Windows** | [python.org installer](https://www.python.org/downloads/) — check "Add to PATH" |
 
-> Projectizer is tested on 3.10, 3.11, and 3.12. Avoid 3.13 for now: pyannote.audio's wheels lag behind on bleeding-edge Python releases.
+> Projectizer is tested on 3.10, 3.11, 3.12, and 3.13.
 
 #### FFmpeg
 
@@ -167,40 +167,18 @@ Once set up, `Projectizer.app` works from Finder too. `bash run.sh` does all of 
 
 ---
 
-### 3. PyTorch Notes
+### 3. Speaker Diarization (optional)
 
-`requirements.txt` pulls `torch>=2.2.0` from PyPI, which gives you the right build for most machines:
+#### What is diarization?
 
-- **macOS (Apple Silicon)** — CPU + MPS acceleration out of the box.
-- **macOS (Intel)** — CPU only.
-- **Linux / Windows (CPU)** — CPU build.
-
-If you have an **NVIDIA GPU on Linux/Windows** and want CUDA acceleration for diarization, install torch from the official index *before* running `pip install -r requirements.txt`:
-
-```bash
-# Example: CUDA 12.1
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install -r requirements.txt
-```
-
-Pick the right URL from [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/).
-
-> Diarization without a GPU is fine for short meetings (under ~30 min). For longer recordings on CPU, expect 0.5–1× realtime.
-
----
-
-### 4. Speaker Diarization Setup (optional)
-
-#### What is diarization, and do you need it?
-
-Diarization is the process of figuring out **who is speaking when** in an audio file. Without it, Projectizer gives you one continuous transcript:
+Diarization figures out **who is speaking when**. Without it, you get one continuous transcript:
 
 ```
 Okay so the deadline is Friday. I think we should push it to next week.
 Why? Because the design isn't ready. Fair enough, let's do Tuesday.
 ```
 
-With diarization enabled, you get speaker labels:
+With diarization on, you get speaker labels:
 
 ```
 Persona 1: Okay so the deadline is Friday.
@@ -210,28 +188,16 @@ Persona 2: Because the design isn't ready.
 Persona 1: Fair enough, let's do Tuesday.
 ```
 
-It's optional. **Skip this section entirely if** your meetings are mostly one person talking, you only need a high-level summary, or you don't want to set up a HuggingFace account. Transcription, action items, and summary all work without it.
+#### How it works
 
-#### Why HuggingFace?
+Projectizer uses OpenAI's [`gpt-4o-transcribe-diarize`](https://developers.openai.com/api/docs/models/gpt-4o-transcribe-diarize) model, which returns transcription **and** speaker segments in a single API call. No extra service, no extra setup, no extra dependency — just toggle "Identifica parlanti" in the UI.
 
-Diarization runs **locally** on your machine using [`pyannote.audio`](https://github.com/pyannote/pyannote-audio) — a free, open-source library. The library itself is on PyPI (`pip` installs it as part of `requirements.txt`), but the *trained model weights* it needs are hosted on HuggingFace under a "gated" license:
+| Mode | Model | Cost (approx) |
+|------|-------|---------------|
+| Diarization OFF | `whisper-1` | $0.006/min ($0.36/hour) |
+| Diarization ON  | `gpt-4o-transcribe-diarize` | ~$0.025/min (~$1.50/hour) |
 
-- The model is free, but the authors require you to agree to their license terms before downloading.
-- Agreement happens on the HuggingFace website (one click).
-- A personal access token proves to the download server that you've agreed.
-
-That's the entire reason for the HuggingFace step. **No data leaves your machine** — diarization runs locally. The token is only used for the initial model download (~500 MB, cached forever).
-
-#### Setup steps
-
-1. **Create a HuggingFace account** at [huggingface.co/join](https://huggingface.co/join). Free, takes 30 seconds.
-2. **Accept the terms** for both gated models — open each link while logged in and click "Agree and access repository":
-   - [`pyannote/speaker-diarization-3.1`](https://huggingface.co/pyannote/speaker-diarization-3.1)
-   - [`pyannote/segmentation-3.0`](https://huggingface.co/pyannote/segmentation-3.0)
-3. **Generate an access token** at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) — type `Read` is sufficient. Copy the `hf_...` string.
-4. **Paste it into Projectizer's Settings panel** under "HuggingFace token" (or set `hf_token` in `config.json`).
-
-The first time diarization runs, pyannote downloads ~500 MB of model weights — cached for all subsequent runs.
+> **Note**: With diarization on, the audio still goes to OpenAI like any other transcription. Speaker labels are produced acoustically by their model, no privacy difference vs. plain Whisper.
 
 ---
 
@@ -246,8 +212,7 @@ cp config.example.json Projectizer.app/Contents/Resources/config.json
 ```json
 {
   "openai_api_key": "sk-...",
-  "summary_model": "gpt-4o-mini",
-  "hf_token": "hf_..."
+  "summary_model": "gpt-4o-mini"
 }
 ```
 
@@ -255,7 +220,6 @@ cp config.example.json Projectizer.app/Contents/Resources/config.json
 |-----------|---------|-------------|
 | `openai_api_key` | — | Your OpenAI API key (required) |
 | `summary_model` | `gpt-4o-mini` | Model for summary generation — swap in `gpt-4o` for higher quality |
-| `hf_token` | — | HuggingFace token (required only for diarization) |
 | `PORT` (env var) | `8899` | Server port — `PORT=9000 bash run.sh` |
 
 ---
@@ -278,7 +242,7 @@ cd projectizer
 bash run.sh
 ```
 
-This script creates the venv inside the bundle (`Projectizer.app/Contents/Resources/.venv/`, ~1 GB) and starts the browser-mode server. After it boots, you can:
+This script creates the venv inside the bundle (`Projectizer.app/Contents/Resources/.venv/`, ~75 MB) and starts the browser-mode server. After it boots, you can:
 
 - Stop with `Ctrl+C` and **double-click `Projectizer.app`** to open the native window
 - Or just keep using the browser at `localhost:8899`
@@ -343,20 +307,17 @@ FFmpeg isn't in your `PATH`. On macOS check `brew --prefix`/bin is in `PATH`; on
 **`ERROR: Could not find a version that satisfies the requirement torch`**
 You're likely on Python 3.13 or an unsupported architecture. Install Python 3.11 and recreate `.venv`.
 
-**`Impossibile caricare il modello di diarization` / pyannote returns `None`**
-Either your HuggingFace token is wrong, or you haven't accepted the terms for both `pyannote/speaker-diarization-3.1` *and* `pyannote/segmentation-3.0`. Re-check step 4 of the diarization setup.
+**Diarization fails**
+Check your OpenAI API key tier — `gpt-4o-transcribe-diarize` requires the same access as Whisper. If your key works for transcription but the diarize toggle fails, try [platform.openai.com/account/limits](https://platform.openai.com/account/limits).
 
-**Diarization is slow / fan spins up**
-Expected on CPU. Disable diarization in the UI for quick transcripts, or install a CUDA-enabled torch on Linux/Windows.
+**Diarization is more expensive than expected**
+Diarize mode uses `gpt-4o-transcribe-diarize` (token-billed, ~$0.025/min) instead of `whisper-1` (~$0.006/min). For monologues or single-speaker recordings, leave the toggle off to save money.
 
 **`OSError: [Errno 48] Address already in use`**
 Port 8899 is taken. Run with a different port: `PORT=9000 bash run.sh`.
 
 **`run.sh` doesn't pick up new requirements**
 `run.sh` auto-detects changes via a SHA-1 hash of `requirements.txt` (stored in `.venv/.installed`). If a refresh fails, force-reinstall by deleting the venv inside the bundle: `rm -rf Projectizer.app/Contents/Resources/.venv && bash run.sh`.
-
-**Apple Silicon: warnings about MPS fallback**
-Harmless. Some pyannote ops aren't implemented on Metal — they fall back to CPU automatically (the `PYTORCH_ENABLE_MPS_FALLBACK=1` env var is set in `app.py`).
 
 **`Projectizer.app` doesn't open a window**
 First, run `bash run.sh` once — it bootstraps the bundle (syncs source files, creates the venv inside `Contents/Resources/`). After that, double-click works. If the `.app` is launched and silently exits, check `/tmp/projectizer-launcher.log` for diagnostics.
@@ -389,7 +350,7 @@ The `.app` reads from `Contents/Resources/`. Run `bash run.sh` to re-sync your e
 
 **Chunking** splits files that exceed Whisper's 25 MB limit, transcribes each segment, and stitches the results seamlessly.
 
-**Diarization (optional)** runs locally via pyannote.audio, then aligns speaker turns with Whisper segments to produce a labeled transcript.
+**Diarization (optional)** uses OpenAI's `gpt-4o-transcribe-diarize` model — single API call returns both transcript and speaker-labeled segments. No local ML stack required.
 
 ---
 
@@ -397,12 +358,13 @@ The `.app` reads from `Contents/Resources/`. Run `bash run.sh` to re-sync your e
 
 | What | Cost |
 |------|------|
-| Transcription (Whisper) | $0.006 / minute |
-| Summary (GPT-4o-mini) | ~$0.0003 / meeting |
-| Diarization (local) | $0 — runs on your CPU/GPU |
-| **1-hour meeting, total** | **~$0.36** |
+| Transcription (`whisper-1`) | $0.006 / minute |
+| Transcription + speakers (`gpt-4o-transcribe-diarize`) | ~$0.025 / minute |
+| Summary (`gpt-4o-mini`) | ~$0.0003 / meeting |
+| **1-hour meeting, transcribe only** | **~$0.36** |
+| **1-hour meeting, with diarization** | **~$1.50** |
 
-For context: 200 hours of meetings per year costs about **$72** — less than one year of Plaud's subscription, with no hardware purchase.
+For context: 200 one-hour meetings per year costs about **$72** without diarization, or **$300** with — still less than one year of Plaud's subscription, no hardware purchase.
 
 ---
 
@@ -413,7 +375,7 @@ Intentionally minimal. No build step, no bundler, no framework overhead.
 - **Backend**: FastAPI + Uvicorn
 - **Frontend**: Vanilla HTML/CSS/JS — single file, zero dependencies
 - **Audio**: FFmpeg for compression and chunking
-- **AI**: OpenAI Whisper (transcription) + GPT (summarization) + pyannote.audio (diarization)
+- **AI**: OpenAI Whisper (transcription) + GPT-4o-mini (summarization) + `gpt-4o-transcribe-diarize` (optional speaker labels)
 
 ---
 
@@ -444,7 +406,7 @@ projectizer/                          (project root — edit source here)
             ├── static/               #   "
             ├── requirements.txt      #   "
             ├── config.json           # User's saved API keys
-            └── .venv/                # Python venv (~1 GB, created on first run)
+            └── .venv/                # Python venv (~75 MB, created on first run)
 ```
 
 **Source of truth**: edit files at the project root. `bash run.sh` keeps `Projectizer.app/Contents/Resources/` in sync — `app.py`, `launcher.py`, `static/`, `requirements.txt`, `config.example.json` are copied into the bundle on every run. The `.venv` and `config.json` (user data) live only inside the bundle.
