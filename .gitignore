@@ -3,3 +3,10 @@ uploads/
 config.json
 __pycache__/
 *.pyc
+.DS_Store
+
+# Self-contained .app bundle: Resources/ is populated by run.sh at runtime.
+# We commit only the bundle skeleton (Info.plist + MacOS/projectizer) and a
+# placeholder so the directory is preserved in git.
+Projectizer.app/Contents/Resources/*
+!Projectizer.app/Contents/Resources/.gitkeep

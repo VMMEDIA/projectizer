@@ -1,4 +1,5 @@
 {
   "openai_api_key": "sk-...",
-  "summary_model": "gpt-4o-mini"
+  "summary_model": "gpt-4o-mini",
+  "hf_token": "hf_..."
 }

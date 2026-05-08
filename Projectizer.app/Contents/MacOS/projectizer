@@ -70,7 +70,9 @@ LOG="$(mktemp -t projectizer-launcher.XXXXXX)"
 RC=$?
 { echo "launcher exit rc=$RC"; tail -c 600 "$LOG"; } >> "$LOG_FILE"
 
-if [ $RC -ne 0 ]; then
+# Don't pop a dialog for SIGTERM (143) or SIGINT (130) — those are clean
+# kills (user closed the window, or another process sent a signal).
+if [ $RC -ne 0 ] && [ $RC -ne 143 ] && [ $RC -ne 130 ]; then
     ERR="$(tail -c 1200 "$LOG" | sed 's/\\/\\\\/g; s/"/\\"/g')"
     /usr/bin/osascript -e "display dialog \"Projectizer exited with error code $RC.\n\n$ERR\n\nLog: $LOG\" with title \"Projectizer\" buttons {\"OK\"} default button \"OK\""
 fi
