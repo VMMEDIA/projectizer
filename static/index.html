@@ -1018,9 +1018,12 @@
                         <input type="checkbox" id="summaryToggle" checked onchange="if(selectedFiles.length) fetchEstimate()">
                         <label for="summaryToggle">Genera riassunto</label>
                     </div>
-                    <div class="option-row">
-                        <input type="checkbox" id="diarizeToggle" onchange="toggleDiarize()">
-                        <label for="diarizeToggle">Identifica parlanti</label>
+                    <div class="option-row" style="opacity: 0.55;" title="Funzione in arrivo">
+                        <input type="checkbox" id="diarizeToggle" disabled onchange="toggleDiarize()">
+                        <label for="diarizeToggle" style="cursor: not-allowed;">
+                            Identifica parlanti
+                            <span style="display:inline-block; margin-left:6px; padding:1px 6px; font-size:10px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; background:var(--accent, #6c5ce7); color:#fff; border-radius:4px; vertical-align:middle;">Coming soon</span>
+                        </label>
                     </div>
                     <div id="diarizeWarning" style="display:none; font-size: 11px; color: var(--text2); margin-top: 6px; padding: 0 4px; line-height: 1.5;">
                         Usa <code style="font-size:10.5px">gpt-4o-transcribe-diarize</code>: costo ~5× rispetto alla trascrizione semplice.
