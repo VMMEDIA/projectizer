@@ -6,6 +6,8 @@
 
 Turn any meeting recording into structured, actionable summaries — ready for PRDs, Notion, or your team wiki.
 
+Use it **in your browser** or as a **native desktop app** — same backend, your choice.
+
 No hardware. No subscription. Just your recordings and an API key.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-6c5ce7.svg)](LICENSE)

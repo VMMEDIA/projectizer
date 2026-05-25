@@ -6,6 +6,8 @@
 
 Trasforma qualsiasi registrazione di una riunione in riassunti strutturati e azionabili — pronti per PRD, Notion o la wiki del team.
 
+Usalo **nel browser** o come **app desktop nativa** — stesso backend, scegli tu.
+
 Niente hardware. Niente abbonamenti. Solo le tue registrazioni e una API key.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-6c5ce7.svg)](LICENSE)
